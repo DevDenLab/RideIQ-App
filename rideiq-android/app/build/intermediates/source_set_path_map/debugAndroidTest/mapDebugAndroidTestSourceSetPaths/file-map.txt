@@ -1,0 +1,4 @@
+com.example.rideiq.test.app-androidTest-0 C:\Users\tatva\OneDrive\Desktop\SystemDesignBooks\System Design Book\ML-Course-Projects\rideiq-android\app\build\generated\res\resValues\androidTest\debug
+com.example.rideiq.test.app-mergeDebugAndroidTestResources-1 C:\Users\tatva\OneDrive\Desktop\SystemDesignBooks\System Design Book\ML-Course-Projects\rideiq-android\app\build\intermediates\incremental\debugAndroidTest\mergeDebugAndroidTestResources\merged.dir
+com.example.rideiq.test.app-mergeDebugAndroidTestResources-2 C:\Users\tatva\OneDrive\Desktop\SystemDesignBooks\System Design Book\ML-Course-Projects\rideiq-android\app\build\intermediates\incremental\debugAndroidTest\mergeDebugAndroidTestResources\stripped.dir
+com.example.rideiq.test.app-debugAndroidTest-3 C:\Users\tatva\OneDrive\Desktop\SystemDesignBooks\System Design Book\ML-Course-Projects\rideiq-android\app\build\intermediates\merged_res\debugAndroidTest\mergeDebugAndroidTestResources

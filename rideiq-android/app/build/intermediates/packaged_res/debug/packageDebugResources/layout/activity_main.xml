@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="18dp">
+
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="@string/app_name" android:textSize="24sp" android:textStyle="bold" />
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="@string/tagline" android:textColor="#666666" android:paddingBottom="10dp" />
+
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="@string/request_ride" android:textStyle="bold" android:paddingTop="4dp" />
+
+        <EditText android:id="@+id/distance" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:hint="@string/hint_distance"
+            android:inputType="numberDecimal" android:text="12" />
+        <EditText android:id="@+id/hour" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:hint="@string/hint_hour"
+            android:inputType="number" android:text="18" />
+        <EditText android:id="@+id/traffic" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:hint="@string/hint_traffic"
+            android:inputType="numberDecimal" android:text="0.8" />
+        <EditText android:id="@+id/surge" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:hint="@string/hint_surge"
+            android:inputType="numberDecimal" android:text="2.2" />
+        <EditText android:id="@+id/rating" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:hint="@string/hint_rating"
+            android:inputType="numberDecimal" android:text="4.6" />
+        <CheckBox android:id="@+id/raining" android:layout_width="wrap_content"
+            android:layout_height="wrap_content" android:text="@string/raining" android:checked="true" />
+
+        <Button android:id="@+id/quoteBtn" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:text="@string/get_quote" android:layout_marginTop="6dp" />
+
+        <Button android:id="@+id/mapBtn" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:text="@string/open_map" android:layout_marginTop="6dp" />
+
+        <TextView android:id="@+id/quoteText" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:layout_marginTop="10dp"
+            android:textSize="16sp" android:textStyle="bold" android:textColor="#1B5E20" />
+
+        <View android:layout_width="match_parent" android:layout_height="1dp"
+            android:background="#DDDDDD" android:layout_marginVertical="14dp" />
+
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="@string/ops_analytics" android:textStyle="bold" />
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="@string/ops_hint" android:textColor="#666666" android:textSize="12sp"
+            android:paddingBottom="6dp" />
+
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal">
+            <Button android:id="@+id/surgeBtn" android:layout_width="0dp" android:layout_weight="1"
+                android:layout_height="wrap_content" android:layout_marginEnd="4dp"
+                android:text="@string/surge_zones" android:textSize="11sp" />
+            <Button android:id="@+id/segBtn" android:layout_width="0dp" android:layout_weight="1"
+                android:layout_height="wrap_content" android:layout_marginStart="4dp"
+                android:text="@string/segments" android:textSize="11sp" />
+        </LinearLayout>
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal">
+            <Button android:id="@+id/driverBtn" android:layout_width="0dp" android:layout_weight="1"
+                android:layout_height="wrap_content" android:layout_marginEnd="4dp"
+                android:text="@string/driver_shift" android:textSize="11sp" />
+            <Button android:id="@+id/causesBtn" android:layout_width="0dp" android:layout_weight="1"
+                android:layout_height="wrap_content" android:layout_marginStart="4dp"
+                android:text="@string/causes" android:textSize="11sp" />
+        </LinearLayout>
+
+        <ProgressBar android:id="@+id/progress" android:layout_width="wrap_content"
+            android:layout_height="wrap_content" android:layout_gravity="center"
+            android:visibility="gone" android:layout_marginTop="8dp" />
+
+        <TextView android:id="@+id/analyticsText" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:layout_marginTop="10dp"
+            android:fontFamily="monospace" android:textSize="12sp" android:textColor="#333333" />
+
+        <ImageView android:id="@+id/plotView" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:adjustViewBounds="true"
+            android:layout_marginTop="10dp" android:contentDescription="@string/plot_desc" />
+    </LinearLayout>
+</ScrollView>

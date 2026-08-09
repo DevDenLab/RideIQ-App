@@ -1,0 +1,4 @@
+#Thu Aug 06 19:07:51 MDT 2026
+base.0=C\:\\Users\\tatva\\OneDrive\\Desktop\\SystemDesignBooks\\System Design Book\\ML-Course-Projects\\rideiq-android\\app\\build\\intermediates\\dex\\debugAndroidTest\\mergeProjectDexDebugAndroidTest\\0\\classes.dex
+path.0=0/classes.dex
+renamed.0=classes.dex

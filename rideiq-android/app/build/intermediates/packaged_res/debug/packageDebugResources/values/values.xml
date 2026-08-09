@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">RideIQ</string>
+    <string name="causes">Cancel causes</string>
+    <string name="driver_shift">Driver shift</string>
+    <string name="from_label">From</string>
+    <string name="get_quote">Get quote (ETA + fare + cancel risk)</string>
+    <string name="hint_distance">Distance (km)</string>
+    <string name="hint_hour">Hour of day (0–23)</string>
+    <string name="hint_rating">Rider rating (3–5)</string>
+    <string name="hint_surge">Surge multiplier (≥1)</string>
+    <string name="hint_traffic">Traffic (0–1)</string>
+    <string name="map_hint">Pinch to zoom. Tap a pickup, then a drop-off — or pick two landmarks — to route.</string>
+    <string name="open_map">Open route map</string>
+    <string name="ops_analytics">Ops analytics</string>
+    <string name="ops_hint">Live ML analytics for operators. Tap to load.</string>
+    <string name="plot_desc">Analytics plot from the ML backend</string>
+    <string name="raining">Raining</string>
+    <string name="request_ride">Request a ride</string>
+    <string name="reset_map">Reset</string>
+    <string name="route_landmarks">Route landmarks</string>
+    <string name="segments">Rider segments</string>
+    <string name="surge_zones">Surge zones</string>
+    <string name="tagline">Ride-hailing brain — 15 ML models behind every feature</string>
+    <string name="to_label">To</string>
+    <string name="toggle_satellite">Satellite / street</string>
+</resources>

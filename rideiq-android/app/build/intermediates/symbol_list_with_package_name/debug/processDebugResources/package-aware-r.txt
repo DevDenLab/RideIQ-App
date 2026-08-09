@@ -3183,6 +3183,7 @@ id dragStart
 id dragUp
 id driverBtn
 id dropdown_menu
+id dropoffText
 id easeIn
 id easeInOut
 id easeOut
@@ -3214,7 +3215,6 @@ id flip
 id floating
 id forever
 id fragment_container_view_tag
-id fromSpinner
 id fullscreen_header
 id ghost_view
 id ghost_view_holder
@@ -3359,6 +3359,7 @@ id path
 id pathRelative
 id peekHeight
 id percent
+id pickupText
 id pin
 id plotView
 id position
@@ -3382,7 +3383,6 @@ id rightToLeft
 id right_icon
 id right_side
 id rounded
-id routeLmBtn
 id row_index_key
 id satBtn
 id save_non_transition_alpha
@@ -3477,7 +3477,6 @@ id time
 id title
 id titleDividerNoCustom
 id title_template
-id toSpinner
 id toggle
 id top
 id topPanel
@@ -3774,6 +3773,7 @@ string clear_text_end_icon_content_description
 string compass
 string cyclemap
 string driver_shift
+string dropoff_hint
 string error_a11y_label
 string error_icon_content_description
 string exposed_dropdown_menu_content_description
@@ -3792,7 +3792,6 @@ string format_distance_only_meter
 string format_distance_only_mile
 string format_distance_only_nautical_mile
 string format_distance_value_unit
-string from_label
 string get_quote
 string hide_bottom_view_on_scroll_behavior
 string hills
@@ -3920,13 +3919,13 @@ string path_password_eye
 string path_password_eye_mask_strike_through
 string path_password_eye_mask_visible
 string path_password_strike_through
+string pickup_waiting
 string plot_desc
 string public_transport
 string raining
 string request_ride
 string reset_map
 string roads_nl
-string route_landmarks
 string samples
 string search_menu_title
 string searchbar_scrolling_view_behavior
@@ -3944,7 +3943,6 @@ string states
 string status_bar_notification_info_overflow
 string surge_zones
 string tagline
-string to_label
 string toggle_satellite
 string topo
 string unknown

@@ -8,8 +8,12 @@ import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
+import android.location.Location;
+import android.location.LocationListener;
+import android.location.LocationManager;
 import android.os.Bundle;
 import android.preference.PreferenceManager;
+import android.speech.tts.TextToSpeech;
 import android.view.View;
 import android.widget.Button;
 import android.widget.ProgressBar;
@@ -36,19 +40,21 @@ import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider;
 import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 import retrofit2.Call;
 import retrofit2.Callback;
 import retrofit2.Response;
 
 /**
- * Uber-style routing on osmdroid (free OpenStreetMap tiles, no API key).
+ * Uber/Google-Maps-style routing + turn-by-turn navigation on osmdroid (free OSM, no API key).
  *
- *  • Pickup is auto-set to your GPS location; its address is filled in automatically.
- *  • Tap the map (or drag the red pin) to set the drop-off — its address fills in too.
- *  • The route, distance, ETA and fare update whenever a pin moves.
+ *  • Pickup auto-sets to your GPS; drop-off is a tap or drag. Addresses fill in automatically.
+ *  • "Start trip" enters navigation: the map follows your GPS and each turn is spoken and shown
+ *    ("In 200 meters, turn left"), just like Google Maps. Announces arrival; reroutes if you drift.
  */
 public class RouteMapActivity extends AppCompatActivity {
 
@@ -56,7 +62,11 @@ public class RouteMapActivity extends AppCompatActivity {
     private static final int RED = Color.parseColor("#C62828");
     private static final int REQ_LOCATION = 101;
 
-    // Clean, light street basemap (CARTO Positron) — routes stand out clearly.
+    // Navigation tuning (metres).
+    private static final float ANNOUNCE_AHEAD_M = 200f;   // pre-warn distance
+    private static final float MANEUVER_HIT_M = 30f;      // "do it now" distance
+    private static final float OFF_ROUTE_M = 80f;         // trigger reroute beyond this
+
     private static final XYTileSource STREET = new XYTileSource(
             "CartoPositron", 0, 20, 256, ".png",
             new String[]{"https://a.basemaps.cartocdn.com/light_all/",
@@ -75,13 +85,25 @@ public class RouteMapActivity extends AppCompatActivity {
     };
 
     private MapView map;
-    private TextView info, pickupText, dropoffText;
+    private TextView info, pickupText, dropoffText, navBanner;
     private ProgressBar progress;
+    private Button startBtn;
 
     private Marker pickupMarker, dropoffMarker;
     private Polyline routeLine;
     private MyLocationNewOverlay myLocation;
     private boolean satellite = false;
+
+    // navigation state
+    private LocationManager lm;
+    private TextToSpeech tts;
+    private boolean ttsReady = false;
+    private boolean navigating = false;
+    private List<ApiModels.Step> navSteps = new ArrayList<>();
+    private List<GeoPoint> routePts = new ArrayList<>();
+    private final Set<Integer> preAnnounced = new HashSet<>();
+    private int currentStep = 0;
+    private int offRouteCount = 0;
 
     @Override
     protected void onCreate(Bundle s) {
@@ -96,6 +118,8 @@ public class RouteMapActivity extends AppCompatActivity {
         progress = findViewById(R.id.progress);
         pickupText = findViewById(R.id.pickupText);
         dropoffText = findViewById(R.id.dropoffText);
+        navBanner = findViewById(R.id.navBanner);
+        startBtn = findViewById(R.id.startBtn);
 
         map = findViewById(R.id.map);
         map.setTileSource(STREET);
@@ -111,10 +135,15 @@ public class RouteMapActivity extends AppCompatActivity {
         ((Button) findViewById(R.id.resetBtn)).setOnClickListener(v -> resetMap());
         ((Button) findViewById(R.id.myLocBtn)).setOnClickListener(v -> onMyLocationTapped());
         ((Button) findViewById(R.id.satBtn)).setOnClickListener(v -> toggleSatellite());
+        startBtn.setOnClickListener(v -> { if (navigating) stopTrip(); else startTrip(); });
+
+        lm = (LocationManager) getSystemService(LOCATION_SERVICE);
+        tts = new TextToSpeech(this, status -> {
+            if (status == TextToSpeech.SUCCESS) { tts.setLanguage(Locale.US); ttsReady = true; }
+        });
 
         setupMyLocation();
 
-        // Auto-set the pickup to the user's location as soon as we're allowed.
         if (hasLocationPermission()) {
             setPickupToMyLocation();
         } else {
@@ -133,7 +162,13 @@ public class RouteMapActivity extends AppCompatActivity {
     @Override protected void onPause() {
         super.onPause();
         map.onPause();
-        if (myLocation != null) myLocation.disableMyLocation();   // stop GPS to save battery
+        if (myLocation != null && !navigating) myLocation.disableMyLocation();
+    }
+
+    @Override protected void onDestroy() {
+        super.onDestroy();
+        if (lm != null) lm.removeUpdates(navListener);
+        if (tts != null) { tts.stop(); tts.shutdown(); }
     }
 
     private void toggleSatellite() {
@@ -164,7 +199,6 @@ public class RouteMapActivity extends AppCompatActivity {
         setPickupToMyLocation();
     }
 
-    /** Center on the GPS fix and use it as the pickup point. */
     private void setPickupToMyLocation() {
         myLocation.enableMyLocation();
         myLocation.enableFollowLocation();
@@ -195,8 +229,9 @@ public class RouteMapActivity extends AppCompatActivity {
 
     // ───────────────────────── selection ─────────────────────────
     private void onMapTap(GeoPoint p) {
-        if (pickupMarker == null) setPickup(p);   // no location yet → first tap is pickup
-        else setDropoff(p);                        // otherwise every tap sets/moves the drop-off
+        if (navigating) return;                    // don't change the trip mid-navigation
+        if (pickupMarker == null) setPickup(p);
+        else setDropoff(p);
     }
 
     private void setPickup(GeoPoint p) {
@@ -223,7 +258,6 @@ public class RouteMapActivity extends AppCompatActivity {
         map.invalidate();
     }
 
-    /** A draggable, colored dot marker. Dragging re-geocodes that pin and re-routes. */
     private Marker makeMarker(GeoPoint p, String title, int color) {
         Marker m = new Marker(map);
         m.setPosition(p);
@@ -258,7 +292,7 @@ public class RouteMapActivity extends AppCompatActivity {
         return new BitmapDrawable(getResources(), bmp);
     }
 
-    // ───────────────────────── reverse geocoding (coords → address) ─────────────────────────
+    // ───────────────────────── reverse geocoding ─────────────────────────
     private void geocode(final GeoPoint p, final TextView target, final String label) {
         target.setText(label + ": …");
         ApiClient.get().reverseGeocode(p.getLatitude(), p.getLongitude())
@@ -270,7 +304,7 @@ public class RouteMapActivity extends AppCompatActivity {
                     }
                     @Override public void onFailure(@NonNull Call<ApiModels.ReverseGeocodeResponse> c,
                                                     @NonNull Throwable t) {
-                        target.setText(label + ": " + coords(p));   // fall back to raw coordinates
+                        target.setText(label + ": " + coords(p));
                     }
                 });
     }
@@ -283,7 +317,7 @@ public class RouteMapActivity extends AppCompatActivity {
     private void routeFromMarkers(String label) {
         GeoPoint a = pickupMarker.getPosition(), b = dropoffMarker.getPosition();
         progress.setVisibility(View.VISIBLE);
-        info.setText("Routing…");
+        if (!navigating) info.setText("Routing…");
         ApiModels.RouteLatLonRequest req = new ApiModels.RouteLatLonRequest(
                 a.getLatitude(), a.getLongitude(), b.getLatitude(), b.getLongitude(),
                 18, 0, 0.6, 1.2);
@@ -308,30 +342,147 @@ public class RouteMapActivity extends AppCompatActivity {
         if (b.polylineLatlon == null || b.polylineLatlon.isEmpty()) {
             info.setText("No route geometry returned."); return;
         }
-        List<GeoPoint> pts = new ArrayList<>();
-        for (List<Double> p : b.polylineLatlon) pts.add(new GeoPoint(p.get(0), p.get(1)));
+        routePts = new ArrayList<>();
+        for (List<Double> p : b.polylineLatlon) routePts.add(new GeoPoint(p.get(0), p.get(1)));
 
         if (routeLine != null) map.getOverlays().remove(routeLine);
         routeLine = new Polyline();
-        routeLine.setPoints(pts);
+        routeLine.setPoints(routePts);
         routeLine.getOutlinePaint().setColor(Color.parseColor("#1E6FEB"));
         routeLine.getOutlinePaint().setStrokeWidth(12f);
         map.getOverlays().add(routeLine);
-        // re-add the pins so they draw on top of the route line
         if (pickupMarker != null) { map.getOverlays().remove(pickupMarker); map.getOverlays().add(pickupMarker); }
         if (dropoffMarker != null) { map.getOverlays().remove(dropoffMarker); map.getOverlays().add(dropoffMarker); }
 
-        info.setText(String.format(Locale.US,
-                "%s\n%.1f km  ·  ETA %.0f min  ·  $%.2f  ·  %d turns\nDrag a pin to adjust — it re-routes.",
-                label, b.distanceKm, b.etaMin, b.fareUsd, b.turns));
+        // store turn-by-turn steps for navigation
+        navSteps = (b.steps != null) ? b.steps : new ArrayList<>();
+        startBtn.setEnabled(!navSteps.isEmpty());
+        if (navigating) { currentStep = 0; preAnnounced.clear(); offRouteCount = 0; }
 
-        map.post(() -> map.zoomToBoundingBox(BoundingBox.fromGeoPoints(pts), true, 90));
+        if (!navigating) {
+            info.setText(String.format(Locale.US,
+                    "%s\n%.1f km  ·  ETA %.0f min  ·  $%.2f  ·  %d turns\nTap “Start trip” for voice navigation.",
+                    label, b.distanceKm, b.etaMin, b.fareUsd, b.turns));
+            map.post(() -> map.zoomToBoundingBox(BoundingBox.fromGeoPoints(routePts), true, 90));
+        }
         map.invalidate();
     }
 
+    // ───────────────────────── navigation ─────────────────────────
+    private final LocationListener navListener = new LocationListener() {
+        @Override public void onLocationChanged(@NonNull Location loc) { onNavLocation(loc); }
+        @Override public void onStatusChanged(String provider, int status, Bundle extras) { }
+        @Override public void onProviderEnabled(@NonNull String provider) { }
+        @Override public void onProviderDisabled(@NonNull String provider) { }
+    };
+
+    private void startTrip() {
+        if (navSteps == null || navSteps.isEmpty()) {
+            Toast.makeText(this, "Set a destination first.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (!hasLocationPermission()) { onMyLocationTapped(); return; }
+        navigating = true;
+        currentStep = 0;
+        preAnnounced.clear();
+        offRouteCount = 0;
+        startBtn.setText(R.string.stop_trip);
+        navBanner.setVisibility(View.VISIBLE);
+        navBanner.setText("Starting navigation…");
+        myLocation.enableMyLocation();
+        map.getController().setZoom(18.0);
+        speak("Starting navigation.");
+        startLocationUpdates();
+    }
+
+    private void stopTrip() {
+        navigating = false;
+        startBtn.setText(R.string.start_trip);
+        navBanner.setVisibility(View.GONE);
+        if (lm != null) lm.removeUpdates(navListener);
+    }
+
+    private void startLocationUpdates() {
+        if (!hasLocationPermission()) return;
+        try { lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000, 1, navListener); }
+        catch (Exception ignored) { }
+        try { lm.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 1000, 1, navListener); }
+        catch (Exception ignored) { }
+    }
+
+    private void onNavLocation(Location loc) {
+        if (!navigating) return;
+        GeoPoint here = new GeoPoint(loc.getLatitude(), loc.getLongitude());
+        map.getController().animateTo(here);                 // camera follows you
+
+        if (currentStep >= navSteps.size()) return;
+        ApiModels.Step step = navSteps.get(currentStep);
+        float d = distMeters(loc.getLatitude(), loc.getLongitude(), step.lat, step.lon);
+        boolean arrive = "arrive".equals(step.maneuver);
+
+        navBanner.setText(arrive
+                ? String.format(Locale.US, "Arriving in %d m", (int) d)
+                : String.format(Locale.US, "%s  ·  %d m", step.instruction, (int) d));
+
+        if (!preAnnounced.contains(currentStep) && d < ANNOUNCE_AHEAD_M) {
+            int rounded = Math.max(10, Math.round(d / 10f) * 10);
+            speak(arrive ? "In " + rounded + " meters you will arrive."
+                         : "In " + rounded + " meters, " + step.instruction + ".");
+            preAnnounced.add(currentStep);
+        }
+
+        if (d < MANEUVER_HIT_M) {
+            if (arrive) {
+                speak("You have arrived at your destination.");
+                navBanner.setText("Arrived.");
+                stopTrip();
+            } else {
+                speak(step.instruction + " now.");
+                currentStep++;
+            }
+            return;
+        }
+
+        // off-route detection → reroute from current position
+        if (distToRoute(loc) > OFF_ROUTE_M) {
+            if (++offRouteCount >= 2) { offRouteCount = 0; reroute(here); }
+        } else {
+            offRouteCount = 0;
+        }
+    }
+
+    private void reroute(GeoPoint here) {
+        speak("Rerouting.");
+        navBanner.setText("Rerouting…");
+        setPickup(here);   // re-routes from here; drawRoute() resets the nav steps while navigating
+    }
+
+    private float distMeters(double la1, double lo1, double la2, double lo2) {
+        float[] r = new float[1];
+        Location.distanceBetween(la1, lo1, la2, lo2, r);
+        return r[0];
+    }
+
+    private float distToRoute(Location loc) {
+        if (routePts == null || routePts.isEmpty()) return 0f;
+        float best = Float.MAX_VALUE;
+        for (GeoPoint p : routePts) {
+            float d = distMeters(loc.getLatitude(), loc.getLongitude(), p.getLatitude(), p.getLongitude());
+            if (d < best) best = d;
+        }
+        return best;
+    }
+
+    private void speak(String text) {
+        if (tts != null && ttsReady) tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "nav");
+    }
+
     private void resetMap() {
+        if (navigating) stopTrip();
         if (routeLine != null) { map.getOverlays().remove(routeLine); routeLine = null; }
         if (dropoffMarker != null) { map.getOverlays().remove(dropoffMarker); dropoffMarker = null; }
+        navSteps = new ArrayList<>();
+        startBtn.setEnabled(false);
         dropoffText.setText(R.string.dropoff_hint);
         info.setText("Drop-off cleared. Tap the map to set a new one.");
         map.invalidate();

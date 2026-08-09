@@ -160,6 +160,54 @@ def _poly_latlon(path):
     return out
 
 
+# ── turn-by-turn steps (for voice navigation) ─────────────────────────────
+def _bearing(a, b):
+    """Compass bearing in degrees (0=N, 90=E) from point a to point b (lat,lon)."""
+    lat1, lat2 = math.radians(a[0]), math.radians(b[0])
+    dlon = math.radians(b[1] - a[1])
+    y = math.sin(dlon) * math.cos(lat2)
+    x = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(dlon)
+    return (math.degrees(math.atan2(y, x)) + 360) % 360
+
+
+def _classify_turn(delta):
+    """delta = signed heading change in degrees (+ = right, - = left)."""
+    a = abs(delta)
+    if a < 25:
+        return "straight", "Continue straight"
+    side = "right" if delta > 0 else "left"
+    if a < 55:
+        return "slight_" + side, "Bear " + side
+    if a < 125:
+        return side, "Turn " + side
+    if a < 160:
+        return "sharp_" + side, "Sharp " + side
+    return "uturn", "Make a U-turn"
+
+
+def _steps_from_path(path):
+    """Turn-by-turn maneuvers at intersections along the path. Each step is the point
+    where you act, the instruction, and how far you travel to reach it from the previous one."""
+    if not path or len(path) < 2 or LATLON is None:
+        return []
+    pts = [LATLON[n] for n in path]
+    steps, acc = [], 0.0
+    for i in range(1, len(path)):
+        acc += ADJ[path[i - 1]][path[i]] * 1000.0            # edge length km -> m
+        if i < len(path) - 1:
+            delta = (_bearing(pts[i], pts[i + 1]) - _bearing(pts[i - 1], pts[i]) + 540) % 360 - 180
+            maneuver, instr = _classify_turn(delta)
+            if maneuver != "straight":
+                steps.append({"lat": round(pts[i][0], 6), "lon": round(pts[i][1], 6),
+                              "maneuver": maneuver, "instruction": instr,
+                              "dist_from_prev_m": round(acc)})
+                acc = 0.0
+    steps.append({"lat": round(pts[-1][0], 6), "lon": round(pts[-1][1], 6),
+                  "maneuver": "arrive", "instruction": "You have arrived at your destination",
+                  "dist_from_prev_m": round(acc)})
+    return steps
+
+
 def route(ax, ay, bx, by):
     s, gnode = _nearest_node(ax, ay), _nearest_node(bx, by)
     path, dist = _astar(s, gnode)
@@ -167,7 +215,8 @@ def route(ax, ay, bx, by):
         return None
     poly = [[round(POS[n][0], 4), round(POS[n][1], 4)] for n in path]
     return {"polyline": poly, "polyline_latlon": _poly_latlon(path),
-            "distance_km": round(dist, 2), "turns": _turns(path), "nodes": len(path)}
+            "distance_km": round(dist, 2), "turns": _turns(path), "nodes": len(path),
+            "steps": _steps_from_path(path)}
 
 
 def has_latlon():
@@ -194,7 +243,8 @@ def route_latlon(lat1, lon1, lat2, lon2):
         return None
     poly = [[round(POS[n][0], 4), round(POS[n][1], 4)] for n in path]
     return {"polyline": poly, "polyline_latlon": _poly_latlon(path),
-            "distance_km": round(dist, 2), "turns": _turns(path), "nodes": len(path)}
+            "distance_km": round(dist, 2), "turns": _turns(path), "nodes": len(path),
+            "steps": _steps_from_path(path)}
 
 
 def graph_json():

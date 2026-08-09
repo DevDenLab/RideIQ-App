@@ -1932,6 +1932,7 @@
     <string name="compass">Compass</string>
     <string name="cyclemap">Cycle Map</string>
     <string name="driver_shift">Driver shift</string>
+    <string name="dropoff_hint">Drop-off: tap the map to set it</string>
     <string description="Screen reader announcement for when a checkbox is on error. [CHAR LIMIT=NONE]" name="error_a11y_label">
     Error: invalid
   </string>
@@ -1952,7 +1953,6 @@
     <string name="format_distance_only_mile">mi</string>
     <string name="format_distance_only_nautical_mile">nm</string>
     <string name="format_distance_value_unit">%1$s %2$s</string>
-    <string name="from_label">From</string>
     <string name="get_quote">Get quote (ETA + fare + cancel risk)</string>
     <string name="hide_bottom_view_on_scroll_behavior" translatable="false">com.google.android.material.behavior.HideBottomViewOnScrollBehavior</string>
     <string name="hills">Hills</string>
@@ -1980,7 +1980,7 @@
     <string name="m3_sys_motion_easing_standard" translatable="false">cubic-bezier(0.2, 0, 0, 1)</string>
     <string name="m3_sys_motion_easing_standard_accelerate" translatable="false">cubic-bezier(0.3, 0, 1, 1)</string>
     <string name="m3_sys_motion_easing_standard_decelerate" translatable="false">cubic-bezier(0, 0, 0, 1)</string>
-    <string name="map_hint">Pinch to zoom. Tap a pickup, then a drop-off — or pick two landmarks — to route.</string>
+    <string name="map_hint">Your pickup is set to your location. Tap the map to set your drop-off — or drag a pin.</string>
     <string name="map_mode">Map Source</string>
     <string name="mapbox">MapBox</string>
     <string name="mapnik" translatable="false">Mapnik</string>
@@ -2086,13 +2086,13 @@
     <string name="path_password_eye_mask_strike_through" translatable="false">M2,4.27 L19.73,22 L22.27,19.46 L4.54,1.73 L4.54,1 L23,1 L23,23 L1,23 L1,4.27 Z</string>
     <string name="path_password_eye_mask_visible" translatable="false">M2,4.27 L2,4.27 L4.54,1.73 L4.54,1.73 L4.54,1 L23,1 L23,23 L1,23 L1,4.27 Z</string>
     <string name="path_password_strike_through" translatable="false">M3.27,4.27 L19.74,20.74</string>
+    <string name="pickup_waiting">Pickup: waiting for your location…</string>
     <string name="plot_desc">Analytics plot from the ML backend</string>
     <string name="public_transport">Public transport</string>
     <string name="raining">Raining</string>
     <string name="request_ride">Request a ride</string>
     <string name="reset_map">Reset</string>
     <string name="roads_nl">Netherlands roads overlay</string>
-    <string name="route_landmarks">Route landmarks</string>
     <string name="samples">Samples</string>
     <string name="search_menu_title">Search</string>
     <string name="searchbar_scrolling_view_behavior" translatable="false">
@@ -2112,7 +2112,6 @@
     <string name="status_bar_notification_info_overflow">999+</string>
     <string name="surge_zones">Surge zones</string>
     <string name="tagline">Ride-hailing brain — 15 ML models behind every feature</string>
-    <string name="to_label">To</string>
     <string name="toggle_satellite">Satellite / street</string>
     <string name="topo">Topographic</string>
     <string name="unknown">Unknown</string>

@@ -55,6 +55,16 @@ public class ApiModels {
         @SerializedName("eta_min") public double etaMin;
         @SerializedName("fare_usd") public double fareUsd;
         public int turns;
+        public java.util.List<Step> steps;   // turn-by-turn maneuvers for voice navigation
+    }
+
+    /** One turn-by-turn maneuver: where to act, what to do, and distance to it. */
+    public static class Step {
+        public double lat;
+        public double lon;
+        public String maneuver;      // left / right / slight_right / sharp_left / uturn / arrive
+        public String instruction;   // e.g. "Turn left", "You have arrived…"
+        @SerializedName("dist_from_prev_m") public double distFromPrevM;
     }
 
     // ---- landmarks ----

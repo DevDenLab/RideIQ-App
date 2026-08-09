@@ -1,8 +1,8 @@
-#Thu Aug 06 20:01:52 MDT 2026
-base.0=C\:\\Users\\tatva\\OneDrive\\Desktop\\SystemDesignBooks\\System Design Book\\ML-Course-Projects\\rideiq-android\\app\\build\\intermediates\\dex\\debug\\mergeExtDexDebug\\classes.dex
-base.1=C\:\\Users\\tatva\\OneDrive\\Desktop\\SystemDesignBooks\\System Design Book\\ML-Course-Projects\\rideiq-android\\app\\build\\intermediates\\dex\\debug\\mergeProjectDexDebug\\0\\classes.dex
-base.2=C\:\\Users\\tatva\\OneDrive\\Desktop\\SystemDesignBooks\\System Design Book\\ML-Course-Projects\\rideiq-android\\app\\build\\intermediates\\dex\\debug\\mergeProjectDexDebug\\12\\classes.dex
-base.3=C\:\\Users\\tatva\\OneDrive\\Desktop\\SystemDesignBooks\\System Design Book\\ML-Course-Projects\\rideiq-android\\app\\build\\intermediates\\dex\\debug\\mergeExtDexDebug\\classes2.dex
+#Sun Aug 09 12:36:07 MDT 2026
+base.0=C\:\\Users\\tatva\\OneDrive\\Desktop\\RideIQ App\\rideiq-android\\app\\build\\intermediates\\dex\\debug\\mergeExtDexDebug\\classes.dex
+base.1=C\:\\Users\\tatva\\OneDrive\\Desktop\\RideIQ App\\rideiq-android\\app\\build\\intermediates\\dex\\debug\\mergeProjectDexDebug\\0\\classes.dex
+base.2=C\:\\Users\\tatva\\OneDrive\\Desktop\\RideIQ App\\rideiq-android\\app\\build\\intermediates\\dex\\debug\\mergeProjectDexDebug\\12\\classes.dex
+base.3=C\:\\Users\\tatva\\OneDrive\\Desktop\\RideIQ App\\rideiq-android\\app\\build\\intermediates\\dex\\debug\\mergeExtDexDebug\\classes2.dex
 path.0=classes.dex
 path.1=0/classes.dex
 path.2=12/classes.dex

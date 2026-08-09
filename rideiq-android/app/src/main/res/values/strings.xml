@@ -24,4 +24,6 @@
     <string name="to_label">To</string>
     <string name="route_landmarks">Route landmarks</string>
     <string name="toggle_satellite">Satellite / street</string>
+    <string name="my_location">My location</string>
+    <string name="location_needed">Location permission is needed to show where you are.</string>
 </resources>

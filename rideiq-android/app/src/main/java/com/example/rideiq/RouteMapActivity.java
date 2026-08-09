@@ -1,5 +1,7 @@
 package com.example.rideiq;
 
+import android.Manifest;
+import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -14,9 +16,12 @@ import android.widget.Button;
 import android.widget.ProgressBar;
 import android.widget.Spinner;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 
 import org.osmdroid.config.Configuration;
 import org.osmdroid.events.MapEventsReceiver;
@@ -30,6 +35,8 @@ import org.osmdroid.views.MapView;
 import org.osmdroid.views.overlay.MapEventsOverlay;
 import org.osmdroid.views.overlay.Marker;
 import org.osmdroid.views.overlay.Polyline;
+import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider;
+import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -79,6 +86,11 @@ public class RouteMapActivity extends AppCompatActivity {
     private Polyline routeLine;
     private boolean satellite = false;
 
+    // ── my-location (Feature A) ──
+    private static final int REQ_LOCATION = 101;
+    private MyLocationNewOverlay myLocation;
+    private boolean followRequested = false;   // did the user tap "My location"?
+
     @Override
     protected void onCreate(Bundle s) {
         super.onCreate(s);
@@ -107,13 +119,77 @@ public class RouteMapActivity extends AppCompatActivity {
         ((Button) findViewById(R.id.resetBtn)).setOnClickListener(v -> resetMap());
         ((Button) findViewById(R.id.routeLmBtn)).setOnClickListener(v -> routeLandmarks());
         ((Button) findViewById(R.id.satBtn)).setOnClickListener(v -> toggleSatellite());
+        ((Button) findViewById(R.id.myLocBtn)).setOnClickListener(v -> onMyLocationTapped());
+
+        setupMyLocation();
 
         info.setText("Tap the map to set your PICKUP (green).");
         loadLandmarks();
     }
 
-    @Override protected void onResume() { super.onResume(); map.onResume(); }
-    @Override protected void onPause() { super.onPause(); map.onPause(); }
+    @Override protected void onResume() {
+        super.onResume();
+        map.onResume();
+        if (myLocation != null && hasLocationPermission()) myLocation.enableMyLocation();
+    }
+
+    @Override protected void onPause() {
+        super.onPause();
+        map.onPause();
+        if (myLocation != null) myLocation.disableMyLocation();   // stop GPS to save battery
+    }
+
+    // ───────────────────────── my location (Feature A) ─────────────────────────
+    /** Add the blue "you are here" dot overlay. Only starts GPS once permission is granted. */
+    private void setupMyLocation() {
+        myLocation = new MyLocationNewOverlay(new GpsMyLocationProvider(this), map);
+        map.getOverlays().add(myLocation);
+        if (hasLocationPermission()) myLocation.enableMyLocation();
+    }
+
+    private boolean hasLocationPermission() {
+        return ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+                == PackageManager.PERMISSION_GRANTED;
+    }
+
+    /** "My location" button: ask for permission if needed, then center + follow the GPS dot. */
+    private void onMyLocationTapped() {
+        followRequested = true;
+        if (!hasLocationPermission()) {
+            ActivityCompat.requestPermissions(this,
+                    new String[]{Manifest.permission.ACCESS_FINE_LOCATION,
+                                 Manifest.permission.ACCESS_COARSE_LOCATION}, REQ_LOCATION);
+            return;
+        }
+        centerOnMyLocation();
+    }
+
+    private void centerOnMyLocation() {
+        myLocation.enableMyLocation();
+        myLocation.enableFollowLocation();          // keep the map centered as you move
+        info.setText("Finding your location…");
+        // getMyLocation() is null until the first GPS fix arrives; wait for it, then animate.
+        myLocation.runOnFirstFix(() -> runOnUiThread(() -> {
+            GeoPoint here = myLocation.getMyLocation();
+            if (here != null) {
+                map.getController().animateTo(here);
+                map.getController().setZoom(16.0);
+                info.setText("You are here. Tap the map to set a PICKUP, or drag a pin.");
+            }
+        }));
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int req, @NonNull String[] perms, @NonNull int[] results) {
+        super.onRequestPermissionsResult(req, perms, results);
+        if (req == REQ_LOCATION) {
+            if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) {
+                if (followRequested) centerOnMyLocation();
+            } else {
+                Toast.makeText(this, R.string.location_needed, Toast.LENGTH_LONG).show();
+            }
+        }
+    }
 
     private void toggleSatellite() {
         satellite = !satellite;

@@ -17,6 +17,8 @@ import time
 import json
 import hashlib
 import sqlite3
+import urllib.parse
+import urllib.request
 from collections import OrderedDict
 
 from fastapi import FastAPI, HTTPException
@@ -181,6 +183,34 @@ def landmarks():
     """Preset Edmonton landmarks + whether real-city routing is available."""
     return {"landmarks": LANDMARKS, "real_city": R.has_latlon(),
             "city": R.CITY_NAME, "instance": INSTANCE}
+
+
+@app.get("/reverse-geocode")
+def reverse_geocode(lat: float, lon: float):
+    """Coordinates -> a human street address, via free OSM Nominatim. Cached to respect
+    Nominatim's 1 req/sec policy and to keep the app snappy when dragging a pin."""
+    key = f"rg:{round(lat, 5)}:{round(lon, 5)}"
+    hit = cache_get(key)
+    if hit:
+        return {**hit, "cached": True, "instance": INSTANCE}
+    url = "https://nominatim.openstreetmap.org/reverse?" + urllib.parse.urlencode(
+        {"lat": lat, "lon": lon, "format": "jsonv2", "zoom": 18, "addressdetails": 1})
+    req = urllib.request.Request(url, headers={"User-Agent": "RideIQ/1.0 (student project)"})
+    try:
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except Exception as e:
+        raise HTTPException(502, f"geocoder unavailable: {e}")
+    a = data.get("address", {})
+    road = a.get("road") or a.get("pedestrian") or a.get("footway") or ""
+    num = a.get("house_number", "")
+    area = (a.get("neighbourhood") or a.get("suburb") or a.get("city_district")
+            or a.get("city") or a.get("town") or "")
+    line1 = (f"{num} {road}").strip()
+    short = ", ".join([p for p in [line1, area] if p]) or (data.get("display_name", "")[:60])
+    out = {"display_name": data.get("display_name", ""), "short": short, "lat": lat, "lon": lon}
+    cache_set(key, out)
+    return {**out, "cached": False, "instance": INSTANCE}
 
 
 @app.post("/route-latlon")

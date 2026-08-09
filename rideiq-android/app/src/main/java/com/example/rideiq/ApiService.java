@@ -6,6 +6,7 @@ import retrofit2.Call;
 import retrofit2.http.Body;
 import retrofit2.http.GET;
 import retrofit2.http.POST;
+import retrofit2.http.Query;
 
 public interface ApiService {
 
@@ -37,4 +38,9 @@ public interface ApiService {
 
     @POST("route-latlon")
     Call<ApiModels.RouteResponse> routeLatLon(@Body ApiModels.RouteLatLonRequest body);
+
+    // Coordinates -> street address (for the pickup / drop-off labels).
+    @GET("reverse-geocode")
+    Call<ApiModels.ReverseGeocodeResponse> reverseGeocode(@Query("lat") double lat,
+                                                          @Query("lon") double lon);
 }

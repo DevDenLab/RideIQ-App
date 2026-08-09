@@ -68,6 +68,14 @@ public class ApiModels {
         @SerializedName("real_city") public boolean realCity;
         public String city;
     }
+    // ---- reverse geocoding (coords -> address) ----
+    public static class ReverseGeocodeResponse {
+        @SerializedName("display_name") public String displayName;
+        @SerializedName("short") public String shortLabel;   // 'short' is a Java keyword
+        public double lat;
+        public double lon;
+    }
+
     public static class RouteLatLonRequest {
         public double lat1, lon1, lat2, lon2;
         public int hour, weather;

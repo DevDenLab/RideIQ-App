@@ -18,12 +18,11 @@
     <string name="causes">Cancel causes</string>
     <string name="plot_desc">Analytics plot from the ML backend</string>
     <string name="open_map">Open route map</string>
-    <string name="map_hint">Pinch to zoom. Tap a pickup, then a drop-off — or pick two landmarks — to route.</string>
+    <string name="map_hint">Your pickup is set to your location. Tap the map to set your drop-off — or drag a pin.</string>
     <string name="reset_map">Reset</string>
-    <string name="from_label">From</string>
-    <string name="to_label">To</string>
-    <string name="route_landmarks">Route landmarks</string>
     <string name="toggle_satellite">Satellite / street</string>
     <string name="my_location">My location</string>
     <string name="location_needed">Location permission is needed to show where you are.</string>
+    <string name="pickup_waiting">Pickup: waiting for your location…</string>
+    <string name="dropoff_hint">Drop-off: tap the map to set it</string>
 </resources>

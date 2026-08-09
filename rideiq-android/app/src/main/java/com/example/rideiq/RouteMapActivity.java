@@ -11,10 +11,8 @@ import android.graphics.drawable.Drawable;
 import android.os.Bundle;
 import android.preference.PreferenceManager;
 import android.view.View;
-import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.ProgressBar;
-import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -26,7 +24,6 @@ import androidx.core.content.ContextCompat;
 import org.osmdroid.config.Configuration;
 import org.osmdroid.events.MapEventsReceiver;
 import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase;
-import org.osmdroid.tileprovider.tilesource.TileSourceFactory;
 import org.osmdroid.tileprovider.tilesource.XYTileSource;
 import org.osmdroid.util.BoundingBox;
 import org.osmdroid.util.GeoPoint;
@@ -47,16 +44,17 @@ import retrofit2.Callback;
 import retrofit2.Response;
 
 /**
- * Interactive Uber-style routing on osmdroid (free OpenStreetMap tiles, no API key).
+ * Uber-style routing on osmdroid (free OpenStreetMap tiles, no API key).
  *
- *  • Tap once to drop a GREEN pickup pin, tap again for a RED drop-off pin.
- *  • Drag either pin to fine-tune — the route, distance, ETA and fare update automatically.
- *  • Or choose two landmarks. Pinch to zoom / drag to pan. Toggle street/satellite tiles.
+ *  • Pickup is auto-set to your GPS location; its address is filled in automatically.
+ *  • Tap the map (or drag the red pin) to set the drop-off — its address fills in too.
+ *  • The route, distance, ETA and fare update whenever a pin moves.
  */
 public class RouteMapActivity extends AppCompatActivity {
 
     private static final int GREEN = Color.parseColor("#2E7D32");
     private static final int RED = Color.parseColor("#C62828");
+    private static final int REQ_LOCATION = 101;
 
     // Clean, light street basemap (CARTO Positron) — routes stand out clearly.
     private static final XYTileSource STREET = new XYTileSource(
@@ -77,19 +75,13 @@ public class RouteMapActivity extends AppCompatActivity {
     };
 
     private MapView map;
-    private TextView info;
+    private TextView info, pickupText, dropoffText;
     private ProgressBar progress;
-    private Spinner fromSpinner, toSpinner;
-    private final List<ApiModels.Landmark> landmarks = new ArrayList<>();
 
     private Marker pickupMarker, dropoffMarker;
     private Polyline routeLine;
-    private boolean satellite = false;
-
-    // ── my-location (Feature A) ──
-    private static final int REQ_LOCATION = 101;
     private MyLocationNewOverlay myLocation;
-    private boolean followRequested = false;   // did the user tap "My location"?
+    private boolean satellite = false;
 
     @Override
     protected void onCreate(Bundle s) {
@@ -102,11 +94,11 @@ public class RouteMapActivity extends AppCompatActivity {
 
         info = findViewById(R.id.info);
         progress = findViewById(R.id.progress);
-        fromSpinner = findViewById(R.id.fromSpinner);
-        toSpinner = findViewById(R.id.toSpinner);
+        pickupText = findViewById(R.id.pickupText);
+        dropoffText = findViewById(R.id.dropoffText);
 
         map = findViewById(R.id.map);
-        map.setTileSource(STREET);                      // clean light street map by default
+        map.setTileSource(STREET);
         map.setMultiTouchControls(true);
         map.getController().setZoom(12.0);
         map.getController().setCenter(new GeoPoint(53.5461, -113.4938));  // Edmonton
@@ -117,14 +109,19 @@ public class RouteMapActivity extends AppCompatActivity {
         }));
 
         ((Button) findViewById(R.id.resetBtn)).setOnClickListener(v -> resetMap());
-        ((Button) findViewById(R.id.routeLmBtn)).setOnClickListener(v -> routeLandmarks());
-        ((Button) findViewById(R.id.satBtn)).setOnClickListener(v -> toggleSatellite());
         ((Button) findViewById(R.id.myLocBtn)).setOnClickListener(v -> onMyLocationTapped());
+        ((Button) findViewById(R.id.satBtn)).setOnClickListener(v -> toggleSatellite());
 
         setupMyLocation();
 
-        info.setText("Tap the map to set your PICKUP (green).");
-        loadLandmarks();
+        // Auto-set the pickup to the user's location as soon as we're allowed.
+        if (hasLocationPermission()) {
+            setPickupToMyLocation();
+        } else {
+            ActivityCompat.requestPermissions(this,
+                    new String[]{Manifest.permission.ACCESS_FINE_LOCATION,
+                                 Manifest.permission.ACCESS_COARSE_LOCATION}, REQ_LOCATION);
+        }
     }
 
     @Override protected void onResume() {
@@ -139,8 +136,13 @@ public class RouteMapActivity extends AppCompatActivity {
         if (myLocation != null) myLocation.disableMyLocation();   // stop GPS to save battery
     }
 
-    // ───────────────────────── my location (Feature A) ─────────────────────────
-    /** Add the blue "you are here" dot overlay. Only starts GPS once permission is granted. */
+    private void toggleSatellite() {
+        satellite = !satellite;
+        map.setTileSource(satellite ? ESRI_SAT : STREET);
+        map.invalidate();
+    }
+
+    // ───────────────────────── my location ─────────────────────────
     private void setupMyLocation() {
         myLocation = new MyLocationNewOverlay(new GpsMyLocationProvider(this), map);
         map.getOverlays().add(myLocation);
@@ -152,29 +154,28 @@ public class RouteMapActivity extends AppCompatActivity {
                 == PackageManager.PERMISSION_GRANTED;
     }
 
-    /** "My location" button: ask for permission if needed, then center + follow the GPS dot. */
     private void onMyLocationTapped() {
-        followRequested = true;
         if (!hasLocationPermission()) {
             ActivityCompat.requestPermissions(this,
                     new String[]{Manifest.permission.ACCESS_FINE_LOCATION,
                                  Manifest.permission.ACCESS_COARSE_LOCATION}, REQ_LOCATION);
             return;
         }
-        centerOnMyLocation();
+        setPickupToMyLocation();
     }
 
-    private void centerOnMyLocation() {
+    /** Center on the GPS fix and use it as the pickup point. */
+    private void setPickupToMyLocation() {
         myLocation.enableMyLocation();
-        myLocation.enableFollowLocation();          // keep the map centered as you move
-        info.setText("Finding your location…");
-        // getMyLocation() is null until the first GPS fix arrives; wait for it, then animate.
+        myLocation.enableFollowLocation();
+        pickupText.setText("Pickup: finding your location…");
         myLocation.runOnFirstFix(() -> runOnUiThread(() -> {
             GeoPoint here = myLocation.getMyLocation();
             if (here != null) {
                 map.getController().animateTo(here);
                 map.getController().setZoom(16.0);
-                info.setText("You are here. Tap the map to set a PICKUP, or drag a pin.");
+                setPickup(here);
+                info.setText("Pickup set to your location. Tap the map to set your drop-off.");
             }
         }));
     }
@@ -184,39 +185,45 @@ public class RouteMapActivity extends AppCompatActivity {
         super.onRequestPermissionsResult(req, perms, results);
         if (req == REQ_LOCATION) {
             if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) {
-                if (followRequested) centerOnMyLocation();
+                setPickupToMyLocation();
             } else {
                 Toast.makeText(this, R.string.location_needed, Toast.LENGTH_LONG).show();
+                info.setText("Tap the map to set your pickup, then tap again for the drop-off.");
             }
         }
     }
 
-    private void toggleSatellite() {
-        satellite = !satellite;
-        map.setTileSource(satellite ? ESRI_SAT : STREET);
-        map.invalidate();
-    }
-
     // ───────────────────────── selection ─────────────────────────
     private void onMapTap(GeoPoint p) {
-        if (pickupMarker == null) {                       // 1) set pickup
+        if (pickupMarker == null) setPickup(p);   // no location yet → first tap is pickup
+        else setDropoff(p);                        // otherwise every tap sets/moves the drop-off
+    }
+
+    private void setPickup(GeoPoint p) {
+        if (pickupMarker == null) {
             pickupMarker = makeMarker(p, "Pickup", GREEN);
             map.getOverlays().add(pickupMarker);
-            info.setText("Pickup set ✓  — now tap your DESTINATION (red).");
-        } else if (dropoffMarker == null) {               // 2) set drop-off → route
-            dropoffMarker = makeMarker(p, "Drop-off", RED);
-            map.getOverlays().add(dropoffMarker);
-            routeFromMarkers("Route");
-        } else {                                          // 3) start over
-            clearAll();
-            pickupMarker = makeMarker(p, "Pickup", GREEN);
-            map.getOverlays().add(pickupMarker);
-            info.setText("Pickup set ✓  — now tap your DESTINATION (red).");
+        } else {
+            pickupMarker.setPosition(p);
         }
+        geocode(p, pickupText, "Pickup");
+        if (dropoffMarker != null) routeFromMarkers("Route");
         map.invalidate();
     }
 
-    /** A draggable, colored dot marker. Dragging re-routes automatically. */
+    private void setDropoff(GeoPoint p) {
+        if (dropoffMarker == null) {
+            dropoffMarker = makeMarker(p, "Drop-off", RED);
+            map.getOverlays().add(dropoffMarker);
+        } else {
+            dropoffMarker.setPosition(p);
+        }
+        geocode(p, dropoffText, "Drop-off");
+        if (pickupMarker != null) routeFromMarkers("Route");
+        map.invalidate();
+    }
+
+    /** A draggable, colored dot marker. Dragging re-geocodes that pin and re-routes. */
     private Marker makeMarker(GeoPoint p, String title, int color) {
         Marker m = new Marker(map);
         m.setPosition(p);
@@ -228,6 +235,8 @@ public class RouteMapActivity extends AppCompatActivity {
             @Override public void onMarkerDragStart(Marker mk) { }
             @Override public void onMarkerDrag(Marker mk) { }
             @Override public void onMarkerDragEnd(Marker mk) {
+                if (mk == pickupMarker) geocode(mk.getPosition(), pickupText, "Pickup");
+                else if (mk == dropoffMarker) geocode(mk.getPosition(), dropoffText, "Drop-off");
                 if (pickupMarker != null && dropoffMarker != null) routeFromMarkers("Updated route");
             }
         });
@@ -249,38 +258,25 @@ public class RouteMapActivity extends AppCompatActivity {
         return new BitmapDrawable(getResources(), bmp);
     }
 
-    // ───────────────────────── landmarks ─────────────────────────
-    private void loadLandmarks() {
-        ApiClient.get().landmarks().enqueue(new Callback<ApiModels.LandmarksResponse>() {
-            @Override public void onResponse(@NonNull Call<ApiModels.LandmarksResponse> c,
-                                             @NonNull Response<ApiModels.LandmarksResponse> r) {
-                if (r.body() == null) return;
-                landmarks.clear();
-                List<String> names = new ArrayList<>();
-                for (ApiModels.Landmark l : r.body().landmarks) { landmarks.add(l); names.add(l.name); }
-                ArrayAdapter<String> ad = new ArrayAdapter<>(RouteMapActivity.this,
-                        android.R.layout.simple_spinner_dropdown_item, names);
-                fromSpinner.setAdapter(ad); toSpinner.setAdapter(ad);
-                if (names.size() > 1) toSpinner.setSelection(1);
-                if (!r.body().realCity) {
-                    info.setText("Map works, but routing needs the real Edmonton graph — "
-                            + "run build_city_graph.py, then restart the backend.");
-                }
-            }
-            @Override public void onFailure(@NonNull Call<ApiModels.LandmarksResponse> c, @NonNull Throwable t) { }
-        });
+    // ───────────────────────── reverse geocoding (coords → address) ─────────────────────────
+    private void geocode(final GeoPoint p, final TextView target, final String label) {
+        target.setText(label + ": …");
+        ApiClient.get().reverseGeocode(p.getLatitude(), p.getLongitude())
+                .enqueue(new Callback<ApiModels.ReverseGeocodeResponse>() {
+                    @Override public void onResponse(@NonNull Call<ApiModels.ReverseGeocodeResponse> c,
+                                                     @NonNull Response<ApiModels.ReverseGeocodeResponse> r) {
+                        String addr = (r.isSuccessful() && r.body() != null) ? r.body().shortLabel : null;
+                        target.setText(label + ": " + (addr != null && !addr.isEmpty() ? addr : coords(p)));
+                    }
+                    @Override public void onFailure(@NonNull Call<ApiModels.ReverseGeocodeResponse> c,
+                                                    @NonNull Throwable t) {
+                        target.setText(label + ": " + coords(p));   // fall back to raw coordinates
+                    }
+                });
     }
 
-    private void routeLandmarks() {
-        if (landmarks.size() < 2) { info.setText("Landmarks not loaded yet."); return; }
-        ApiModels.Landmark a = landmarks.get(fromSpinner.getSelectedItemPosition());
-        ApiModels.Landmark b = landmarks.get(toSpinner.getSelectedItemPosition());
-        clearAll();
-        pickupMarker = makeMarker(new GeoPoint(a.lat, a.lon), a.name, GREEN);
-        dropoffMarker = makeMarker(new GeoPoint(b.lat, b.lon), b.name, RED);
-        map.getOverlays().add(pickupMarker);
-        map.getOverlays().add(dropoffMarker);
-        routeFromMarkers(a.name + " → " + b.name);
+    private String coords(GeoPoint p) {
+        return String.format(Locale.US, "%.5f, %.5f", p.getLatitude(), p.getLongitude());
     }
 
     // ───────────────────────── routing ─────────────────────────
@@ -296,8 +292,7 @@ public class RouteMapActivity extends AppCompatActivity {
                                              @NonNull Response<ApiModels.RouteResponse> r) {
                 progress.setVisibility(View.GONE);
                 if (!r.isSuccessful() || r.body() == null) {
-                    info.setText("Routing needs the real Edmonton map "
-                            + "(run build_city_graph.py, restart backend).");
+                    info.setText("Couldn't route between those points (they may be outside Edmonton).");
                     return;
                 }
                 drawRoute(r.body(), label);
@@ -334,15 +329,11 @@ public class RouteMapActivity extends AppCompatActivity {
         map.invalidate();
     }
 
-    private void clearAll() {
-        if (routeLine != null) { map.getOverlays().remove(routeLine); routeLine = null; }
-        if (pickupMarker != null) { map.getOverlays().remove(pickupMarker); pickupMarker = null; }
-        if (dropoffMarker != null) { map.getOverlays().remove(dropoffMarker); dropoffMarker = null; }
-        map.invalidate();
-    }
-
     private void resetMap() {
-        clearAll();
-        info.setText("Tap the map to set your PICKUP (green).");
+        if (routeLine != null) { map.getOverlays().remove(routeLine); routeLine = null; }
+        if (dropoffMarker != null) { map.getOverlays().remove(dropoffMarker); dropoffMarker = null; }
+        dropoffText.setText(R.string.dropoff_hint);
+        info.setText("Drop-off cleared. Tap the map to set a new one.");
+        map.invalidate();
     }
 }

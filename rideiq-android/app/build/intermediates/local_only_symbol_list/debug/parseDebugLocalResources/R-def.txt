@@ -9,6 +9,7 @@ id hour
 id info
 id map
 id mapBtn
+id myLocBtn
 id plotView
 id progress
 id quoteBtn
@@ -35,7 +36,9 @@ string hint_hour
 string hint_rating
 string hint_surge
 string hint_traffic
+string location_needed
 string map_hint
+string my_location
 string open_map
 string ops_analytics
 string ops_hint

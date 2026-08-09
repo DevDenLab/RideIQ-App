@@ -37,6 +37,9 @@
         <Button android:id="@+id/routeLmBtn" android:layout_width="0dp" android:layout_weight="1"
             android:layout_height="wrap_content" android:layout_marginEnd="4dp"
             android:text="@string/route_landmarks" android:textSize="12sp" />
+        <Button android:id="@+id/myLocBtn" android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content" android:layout_marginStart="4dp" android:layout_marginEnd="4dp"
+            android:text="@string/my_location" android:textSize="12sp" />
         <Button android:id="@+id/satBtn" android:layout_width="0dp" android:layout_weight="1"
             android:layout_height="wrap_content" android:layout_marginStart="4dp"
             android:text="@string/toggle_satellite" android:textSize="12sp" />

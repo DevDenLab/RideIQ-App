@@ -10,7 +10,9 @@
     <string name="hint_rating">Rider rating (3–5)</string>
     <string name="hint_surge">Surge multiplier (≥1)</string>
     <string name="hint_traffic">Traffic (0–1)</string>
+    <string name="location_needed">Location permission is needed to show where you are.</string>
     <string name="map_hint">Pinch to zoom. Tap a pickup, then a drop-off — or pick two landmarks — to route.</string>
+    <string name="my_location">My location</string>
     <string name="open_map">Open route map</string>
     <string name="ops_analytics">Ops analytics</string>
     <string name="ops_hint">Live ML analytics for operators. Tap to load.</string>

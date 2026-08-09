@@ -60,7 +60,7 @@ def _build_grid():
 
 def _load_city():
     data = json.load(open(CITY_FILE, encoding="utf-8"))
-    pos, latlon, adj, geom = {}, {}, {}, {}
+    pos, latlon, adj, geom, names = {}, {}, {}, {}, {}
     for n in data["nodes"]:
         pos[n["id"]] = (n["x"], n["y"])          # normalized 0..1 for drawing
         latlon[n["id"]] = (n["lat"], n["lon"])   # real coords for true distances
@@ -73,7 +73,11 @@ def _load_city():
                                          [latlon[b][0], latlon[b][1]]]
         geom[(a, b)] = shape
         geom[(b, a)] = list(reversed(shape))
-    return data.get("name", "City"), pos, latlon, adj, geom
+        # street name (5th field); older graphs won't have it -> stays None
+        nm = e[4] if len(e) > 4 else None
+        names[(a, b)] = nm
+        names[(b, a)] = nm
+    return data.get("name", "City"), pos, latlon, adj, geom, names
 
 
 def _have_real_city():
@@ -87,10 +91,11 @@ def _have_real_city():
 
 
 if _have_real_city():
-    CITY_NAME, POS, LATLON, ADJ, GEOM = _load_city()
+    CITY_NAME, POS, LATLON, ADJ, GEOM, NAMES = _load_city()
 else:
     CITY_NAME, POS, LATLON, ADJ = _build_grid()
     GEOM = None
+    NAMES = None
 
 
 # ── A* shortest path ──────────────────────────────────────────────────────
@@ -185,6 +190,11 @@ def _classify_turn(delta):
     return "uturn", "Make a U-turn"
 
 
+def _edge_name(a, b):
+    """Street name for the edge a->b, if the loaded graph has names (else None)."""
+    return NAMES.get((a, b)) if NAMES else None
+
+
 def _steps_from_path(path):
     """Turn-by-turn maneuvers at intersections along the path. Each step is the point
     where you act, the instruction, and how far you travel to reach it from the previous one."""
@@ -198,8 +208,10 @@ def _steps_from_path(path):
             delta = (_bearing(pts[i], pts[i + 1]) - _bearing(pts[i - 1], pts[i]) + 540) % 360 - 180
             maneuver, instr = _classify_turn(delta)
             if maneuver != "straight":
+                onto = _edge_name(path[i], path[i + 1])      # the street you turn ONTO
+                text = instr + (" onto " + onto if onto else "")
                 steps.append({"lat": round(pts[i][0], 6), "lon": round(pts[i][1], 6),
-                              "maneuver": maneuver, "instruction": instr,
+                              "maneuver": maneuver, "instruction": text, "street": onto,
                               "dist_from_prev_m": round(acc)})
                 acc = 0.0
     steps.append({"lat": round(pts[-1][0], 6), "lon": round(pts[-1][1], 6),

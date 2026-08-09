@@ -78,7 +78,11 @@ def main():
         else:
             shape = [[round(G.nodes[u]["y"], 6), round(G.nodes[u]["x"], 6)],
                      [round(G.nodes[v]["y"], 6), round(G.nodes[v]["x"], 6)]]
-        out_edges.append([a, b, round(length_km, 4), shape])
+        # street name (OSM 'name'); can be a list if the way carries several names
+        name = d.get("name")
+        if isinstance(name, list):
+            name = name[0] if name else None
+        out_edges.append([a, b, round(length_km, 4), shape, name])
 
     json.dump({"name": name, "nodes": out_nodes, "edges": out_edges},
               open(OUT_JSON, "w", encoding="utf-8"))

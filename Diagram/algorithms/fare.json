@@ -1,0 +1,36 @@
+{
+  "feature": "Fare estimation",
+  "endpoints": [
+    "POST /estimate-fare",
+    "used inside /quote and /route"
+  ],
+  "inputs": {
+    "distance": "km",
+    "duration": "min (from ETA)",
+    "surge": ">= 1.0 multiplier"
+  },
+  "algorithms": [
+    {
+      "name": "Random Forest Regressor",
+      "role": "primary fare prediction (120 trees)"
+    },
+    {
+      "name": "KNN Regressor (k=7)",
+      "role": "finds 7 comparable past trips, returns their fares for transparency"
+    }
+  ],
+  "combination": "random_forest is the quoted fare; KNN provides comparable_trip_fares for explainability",
+  "output": {
+    "random_forest": "USD (quoted)",
+    "knn_comparable": "USD",
+    "comparable_trip_fares": "list of 7 similar trip fares"
+  },
+  "flow": [
+    "take distance + ETA duration + surge",
+    "Random Forest predicts fare",
+    "KNN finds nearest trips and their fares",
+    "return quoted fare + comparables"
+  ],
+  "type": "supervised regression + instance-based",
+  "image_prompt": "Draw a clean left-to-right flowchart for the RideIQ 'Fare estimation' feature. Show input fields entering a box of ML models running in parallel, their outputs combined into a single result, then returned to the Android app as JSON. Flat modern style, rounded boxes, labeled arrows. Two boxes: Random Forest (quoted fare) and KNN (k=7 comparable trips), KNN drawing to a small 'similar trips' list."
+}

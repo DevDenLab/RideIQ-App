@@ -1,0 +1,21 @@
+{
+  "feature": "Quote orchestration (composite)",
+  "endpoints": [
+    "POST /quote"
+  ],
+  "purpose": "single rider-facing call that chains three feature groups and logs the result",
+  "chain": [
+    "predict_eta(distance,hour,weather,traffic) -> duration",
+    "estimate_fare(distance,duration,surge) -> fare",
+    "cancellation_risk(wait,surge,traffic,rider_rating) -> risk",
+    "INSERT into SQLite quotes table"
+  ],
+  "output": {
+    "eta_min": "min",
+    "fare_usd": "USD",
+    "cancellation_risk": "prob",
+    "*_detail": "per-model breakdowns",
+    "instance": "which replica served it"
+  },
+  "image_prompt": "Draw a clean left-to-right flowchart for the RideIQ 'Quote' feature. Show input fields entering a box of ML models running in parallel, their outputs combined into a single result, then returned to the Android app as JSON. Flat modern style, rounded boxes, labeled arrows. One /quote request fanning into ETA -> Fare -> Cancellation-risk in sequence, results merged into one JSON and a copy written to SQLite."
+}

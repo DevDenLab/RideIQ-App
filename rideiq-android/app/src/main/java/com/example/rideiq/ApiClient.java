@@ -9,9 +9,11 @@ import retrofit2.converter.gson.GsonConverterFactory;
 
 public class ApiClient {
 
-    // 10.0.2.2 = host PC from the emulator (nginx :8080).
-    // Physical phone: use your PC's LAN IP, e.g. "http://192.168.1.20:8080/".
-    public static final String BASE_URL = "http://10.0.2.2:8080/";
+    // Production: EC2 nginx edge on port 80 (public DNS). Works on a real phone over the internet.
+    // Local dev fallbacks:
+    //   emulator + local stack  -> "http://10.0.2.2:8080/"
+    //   physical phone on LAN    -> "http://<your-PC-LAN-IP>:8080/"
+    public static final String BASE_URL = "http://ec2-3-99-66-9.ca-central-1.compute.amazonaws.com/";
 
     private static ApiService service;
 

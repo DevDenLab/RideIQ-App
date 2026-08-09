@@ -1,0 +1,37 @@
+{
+  "feature": "Payment fraud check",
+  "endpoints": [
+    "POST /fraud-check"
+  ],
+  "inputs": {
+    "payment": "payment type/amount code",
+    "distance": "km",
+    "duration": "min",
+    "surge": "multiplier"
+  },
+  "algorithms": [
+    {
+      "name": "SVM (probability)",
+      "role": "margin-based classifier on standardized features"
+    },
+    {
+      "name": "Gaussian Naive Bayes",
+      "role": "fast probabilistic baseline"
+    }
+  ],
+  "combination": "consensus = mean(svm, naive_bayes); flag = 'review' if >= 0.5 else 'ok'",
+  "output": {
+    "svm": "prob",
+    "naive_bayes": "prob",
+    "consensus": "prob",
+    "flag": "review/ok"
+  },
+  "flow": [
+    "take payment + trip features",
+    "SVM and Naive Bayes each output P(fraud)",
+    "average -> consensus",
+    "threshold 0.5 -> flag review/ok"
+  ],
+  "type": "supervised binary classification",
+  "image_prompt": "Draw a clean left-to-right flowchart for the RideIQ 'Fraud check' feature. Show input fields entering a box of ML models running in parallel, their outputs combined into a single result, then returned to the Android app as JSON. Flat modern style, rounded boxes, labeled arrows. Two classifier boxes (SVM, Naive Bayes) to a consensus node and a review/ok gate."
+}

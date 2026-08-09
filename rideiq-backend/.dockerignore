@@ -1,0 +1,8 @@
+# Keep the image lean. NOTE: city_graph.json is intentionally NOT ignored --
+# real-city routing needs it baked into the image.
+__pycache__/
+*.pyc
+*.pyo
+# Live DB lives on the mounted volume (/data), not in the image.
+rideiq.db
+.git/

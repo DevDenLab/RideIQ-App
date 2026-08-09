@@ -1,0 +1,38 @@
+{
+  "feature": "Rider segmentation (analytics)",
+  "endpoints": [
+    "GET /rider-segments (cached, returns a plot)"
+  ],
+  "inputs": {
+    "source": "generated rider feature vectors + true segment labels"
+  },
+  "algorithms": [
+    {
+      "name": "PCA (2 components)",
+      "role": "dimensionality reduction for 2D visualization"
+    },
+    {
+      "name": "Fisher Discriminant / LDA",
+      "role": "supervised separation of segments, reports accuracy"
+    }
+  ],
+  "combination": "PCA projects to 2D for plotting; LDA measures how separable the segments are",
+  "output": {
+    "segments": [
+      "commuter",
+      "occasional",
+      "power user"
+    ],
+    "lda_accuracy": "acc",
+    "pca_var_first2": "variance explained",
+    "plot_png_base64": "chart"
+  },
+  "flow": [
+    "standardize rider features",
+    "PCA -> 2D projection",
+    "LDA -> separation + accuracy",
+    "render PCA scatter + LDA histogram"
+  ],
+  "type": "dimensionality reduction + supervised discriminant",
+  "image_prompt": "Draw a clean left-to-right flowchart for the RideIQ 'Rider segments' feature. Show input fields entering a box of ML models running in parallel, their outputs combined into a single result, then returned to the Android app as JSON. Flat modern style, rounded boxes, labeled arrows. A standardize box feeding PCA (2D scatter of 3 rider groups) and LDA (separation histogram)."
+}

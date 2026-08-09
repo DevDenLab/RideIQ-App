@@ -1,0 +1,43 @@
+{
+  "feature": "Cancellation risk",
+  "endpoints": [
+    "POST /cancellation-risk",
+    "used inside /quote"
+  ],
+  "inputs": {
+    "wait_time": "min",
+    "surge": "multiplier",
+    "traffic": "0..1",
+    "rider_rating": "stars"
+  },
+  "algorithms": [
+    {
+      "name": "Logistic Regression",
+      "role": "probabilistic linear classifier (on standardized features)"
+    },
+    {
+      "name": "Decision Tree (depth 5)",
+      "role": "interpretable rules"
+    },
+    {
+      "name": "AdaBoost",
+      "role": "boosted ensemble for accuracy (120 estimators)"
+    }
+  ],
+  "combination": "consensus = mean of the three cancel probabilities; flag = 'high' if >= 0.5 else 'low'",
+  "output": {
+    "logistic_regression": "prob",
+    "decision_tree": "prob",
+    "adaboost": "prob",
+    "consensus": "prob",
+    "flag": "high/low"
+  },
+  "flow": [
+    "compute wait_time (in /quote from surge+traffic)",
+    "three classifiers each output P(cancel)",
+    "average -> consensus",
+    "threshold 0.5 -> flag"
+  ],
+  "type": "supervised binary classification",
+  "image_prompt": "Draw a clean left-to-right flowchart for the RideIQ 'Cancellation risk' feature. Show input fields entering a box of ML models running in parallel, their outputs combined into a single result, then returned to the Android app as JSON. Flat modern style, rounded boxes, labeled arrows. Three classifier boxes feeding a 'consensus mean' node then a 0.5 threshold gate outputting high/low."
+}

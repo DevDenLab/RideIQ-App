@@ -1,0 +1,30 @@
+{
+  "feature": "Driver shift analysis (analytics)",
+  "endpoints": [
+    "GET /driver-shift (cached, returns a plot)"
+  ],
+  "inputs": {
+    "source": "driver earnings time series (5-min intervals)"
+  },
+  "algorithms": [
+    {
+      "name": "Gaussian Hidden Markov Model (3 states)",
+      "role": "decode hidden activity states from earnings sequence"
+    }
+  ],
+  "combination": "states relabeled by mean earnings -> idle / en-route / on-trip; report time fraction in each",
+  "output": {
+    "n_states": 3,
+    "time_fraction": "{idle, en-route, on-trip}",
+    "log_likelihood": "model fit",
+    "plot_png_base64": "chart"
+  },
+  "flow": [
+    "take earnings time series",
+    "HMM fits + decodes states (Viterbi)",
+    "order states by mean earnings -> names",
+    "render state-colored timeline"
+  ],
+  "type": "sequential / probabilistic (HMM)",
+  "image_prompt": "Draw a clean left-to-right flowchart for the RideIQ 'Driver shift' feature. Show input fields entering a box of ML models running in parallel, their outputs combined into a single result, then returned to the Android app as JSON. Flat modern style, rounded boxes, labeled arrows. A time-series of earnings passing through a Hidden Markov Model box that outputs a colored timeline of idle / en-route / on-trip states."
+}

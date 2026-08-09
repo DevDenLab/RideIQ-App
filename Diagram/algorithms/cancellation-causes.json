@@ -1,0 +1,29 @@
+{
+  "feature": "Cancellation causes (analytics)",
+  "endpoints": [
+    "GET /cancellation-causes (cached, returns a plot)"
+  ],
+  "inputs": {
+    "model": "fixed causal graph Rain -> Demand -> Surge -> Cancel with CPDs"
+  },
+  "algorithms": [
+    {
+      "name": "Bayesian Network + Variable Elimination",
+      "role": "probabilistic causal inference"
+    }
+  ],
+  "combination": "query P(Cancel) under Rain=dry vs Rain=rain to show how rain propagates through the chain",
+  "output": {
+    "P_cancel_given_dry": "prob",
+    "P_cancel_given_rain": "prob",
+    "insight": "text",
+    "plot_png_base64": "DAG chart"
+  },
+  "flow": [
+    "define DAG Rain->Demand->Surge->Cancel with CPDs",
+    "VariableElimination infers P(Cancel|Rain=0/1)",
+    "render the causal DAG"
+  ],
+  "type": "probabilistic graphical model",
+  "image_prompt": "Draw a clean left-to-right flowchart for the RideIQ 'Cancellation causes' feature. Show input fields entering a box of ML models running in parallel, their outputs combined into a single result, then returned to the Android app as JSON. Flat modern style, rounded boxes, labeled arrows. A directed causal chain of four nodes Rain -> Demand -> Surge -> Cancel with probability tables, and two inference results for dry vs rain."
+}

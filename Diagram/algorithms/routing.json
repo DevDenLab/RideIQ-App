@@ -1,0 +1,44 @@
+{
+  "feature": "Routing / navigation",
+  "endpoints": [
+    "GET /graph",
+    "GET /landmarks",
+    "POST /route (normalized xy)",
+    "POST /route-latlon (real lat/lon)"
+  ],
+  "inputs": {
+    "route": "origin + destination coords + hour/weather/traffic/surge"
+  },
+  "algorithms": [
+    {
+      "name": "A* search (Dijkstra + haversine heuristic)",
+      "role": "shortest path over the road graph (nodes=intersections, edges=streets weighted by length)"
+    },
+    {
+      "name": "ETA models",
+      "role": "convert route distance -> minutes"
+    },
+    {
+      "name": "Fare models",
+      "role": "convert distance + ETA + surge -> price"
+    }
+  ],
+  "combination": "A* finds the path -> distance_km; ETA ML gives eta_min; Fare ML gives fare_usd; polyline returned for the map",
+  "output": {
+    "polyline_latlon": "[[lat,lon],...]",
+    "distance_km": "km",
+    "eta_min": "min",
+    "fare_usd": "USD",
+    "turns": "count"
+  },
+  "flow": [
+    "load city_graph.json (Edmonton) or demo grid",
+    "snap origin/destination to nearest nodes",
+    "A* shortest path",
+    "chain ETA + Fare models",
+    "return polyline + metrics to the app map"
+  ],
+  "type": "graph search + supervised regression chain",
+  "data_source": "free OpenStreetMap via build_city_graph.py -> city_graph.json (no paid Maps API)",
+  "image_prompt": "Draw a clean left-to-right flowchart for the RideIQ 'Routing' feature. Show input fields entering a box of ML models running in parallel, their outputs combined into a single result, then returned to the Android app as JSON. Flat modern style, rounded boxes, labeled arrows. A road-network graph with an A* shortest path highlighted between two pins, feeding distance into ETA and Fare model boxes, returning a polyline to the phone map."
+}

@@ -1,0 +1,37 @@
+{
+  "feature": "Surge / demand zones (analytics)",
+  "endpoints": [
+    "GET /surge-zones (cached, returns a plot)"
+  ],
+  "inputs": {
+    "source": "generated demand points (lat/lon)"
+  },
+  "algorithms": [
+    {
+      "name": "K-Means (k=5)",
+      "role": "cluster demand into hotspot zones; centers = surge zones"
+    },
+    {
+      "name": "Gaussian Mixture (EM)",
+      "role": "soft/probabilistic clustering alternative"
+    },
+    {
+      "name": "Hierarchical (Ward linkage)",
+      "role": "zone taxonomy dendrogram"
+    }
+  ],
+  "combination": "K-Means centers ranked by demand define zones; silhouette score measures cluster quality",
+  "output": {
+    "zones": "list of {zone, lat, lon, demand}",
+    "silhouette": "cluster quality",
+    "plot_png_base64": "chart"
+  },
+  "flow": [
+    "generate demand points",
+    "K-Means clusters -> hotspot centers",
+    "score with silhouette",
+    "render scatter + dendrogram plot"
+  ],
+  "type": "unsupervised clustering",
+  "image_prompt": "Draw a clean left-to-right flowchart for the RideIQ 'Surge zones' feature. Show input fields entering a box of ML models running in parallel, their outputs combined into a single result, then returned to the Android app as JSON. Flat modern style, rounded boxes, labeled arrows. A map-scatter of demand points clustering into 5 hotspots via K-Means, plus a dendrogram box for hierarchical taxonomy."
+}

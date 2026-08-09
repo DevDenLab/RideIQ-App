@@ -1,0 +1,88 @@
+{
+  "$comment": "Feed this file to Gemini / Nano Banana Pro to generate the RideIQ architecture diagram. Use the 'image_prompt' as the main instruction and the 'spec' below as the exact structure to draw. Folder named 'Diagram' (your note said 'Dairgam').",
+  "meta": {
+    "project": "RideIQ",
+    "subtitle": "Ride-hailing brain — Android app + FastAPI ML backend, deployed to AWS EC2 with blue-green CI/CD",
+    "version": "1.0",
+    "diagram_type": "system + deployment architecture",
+    "orientation": "left-to-right",
+    "aspect_ratio": "16:9"
+  },
+
+  "image_prompt": "Create a clean, professional software architecture diagram, left-to-right flow, flat modern style with soft rounded rectangles, subtle drop shadows, and clear labeled arrows. Show four vertical zones separated by faint dashed boundaries: (1) CLIENT — an Android phone running the RideIQ app with two screens (Quote screen, OpenStreetMap route screen). (2) CI/CD PIPELINE — GitHub push on main triggering a GitHub Actions cloud runner that builds a Docker image and pushes it to the ghcr.io container registry, then SSHes into the server to run a blue-green swap. (3) AWS EC2 HOST — a box (the VM) containing an nginx edge reverse-proxy on port 80, two app containers labeled 'rideiq-blue' and 'rideiq-green' where only one is live at a time (draw green as ACTIVE/solid, blue as IDLE/faded), a shared Redis cache container, a SQLite database on a mounted volume, and a baked-in city_graph.json (Edmonton road network). (4) ML BRAIN inside the live app container — a stack of 8 feature boxes: ETA prediction, Fare estimation, Cancellation risk, Fraud check, Surge zones, Rider segments, Driver shift, Cancellation causes, plus an A* routing engine. Draw the request path as a bold arrow: phone → Elastic Public IP → nginx :80 → live color :8000 → ML brain. Draw the deploy path as a separate colored arrow: GitHub Actions → ghcr.io and GitHub Actions → SSH → nginx swap. Add a small 'rollback' loop arrow from a stored old image back into the swap. Use a legend explaining ACTIVE vs IDLE color and the two arrow types (traffic vs deploy). Keep text crisp and readable; label every arrow with its protocol (HTTP, SSH, Docker pull, Redis, SQLite).",
+
+  "style": {
+    "look": "flat, modern, professional, whiteboard-clean",
+    "shapes": "rounded rectangles for services, cylinder for databases, phone frame for client, dashed box for the EC2 host boundary",
+    "palette": {
+      "client": "#6366F1",
+      "cicd": "#F59E0B",
+      "host_boundary": "#94A3B8",
+      "active_color": "#22C55E",
+      "idle_color": "#CBD5E1",
+      "cache": "#EF4444",
+      "database": "#0EA5E9",
+      "ml": "#8B5CF6",
+      "traffic_arrow": "#111827",
+      "deploy_arrow": "#F59E0B"
+    },
+    "legend": [
+      {"symbol": "solid green box", "means": "ACTIVE color serving traffic"},
+      {"symbol": "faded grey box", "means": "IDLE color (previous version, kept for rollback)"},
+      {"symbol": "black arrow", "means": "user request / live traffic"},
+      {"symbol": "orange arrow", "means": "CI/CD deploy path"}
+    ]
+  },
+
+  "spec": {
+    "zones": [
+      {"id": "client", "label": "Client", "color": "#6366F1"},
+      {"id": "cicd", "label": "CI/CD Pipeline", "color": "#F59E0B"},
+      {"id": "host", "label": "AWS EC2 Host (Elastic Public IP)", "color": "#94A3B8"},
+      {"id": "brain", "label": "ML Brain (inside live app container)", "color": "#8B5CF6"}
+    ],
+    "nodes": [
+      {"id": "phone", "zone": "client", "type": "device", "label": "RideIQ Android app (.apk)", "sublabel": "Quote screen + OSM route map (osmdroid)"},
+      {"id": "github", "zone": "cicd", "type": "service", "label": "GitHub Actions", "sublabel": "on push to main / manual rollback"},
+      {"id": "ghcr", "zone": "cicd", "type": "registry", "label": "ghcr.io registry", "sublabel": "image tags: sha-<commit>, latest"},
+      {"id": "nginx", "zone": "host", "type": "proxy", "label": "nginx edge (cicd-edge)", "sublabel": "listens :80, reverse proxy"},
+      {"id": "blue", "zone": "host", "type": "container", "label": "rideiq-blue", "sublabel": "FastAPI :8000", "state": "idle"},
+      {"id": "green", "zone": "host", "type": "container", "label": "rideiq-green", "sublabel": "FastAPI :8000", "state": "active"},
+      {"id": "redis", "zone": "host", "type": "cache", "label": "Redis", "sublabel": "shared cache, never swapped"},
+      {"id": "sqlite", "zone": "host", "type": "database", "label": "SQLite rideiq.db", "sublabel": "on mounted volume /data, logs quotes"},
+      {"id": "citygraph", "zone": "host", "type": "asset", "label": "city_graph.json", "sublabel": "Edmonton OSM road network, baked into image"},
+      {"id": "astar", "zone": "brain", "type": "engine", "label": "A* routing engine", "sublabel": "Dijkstra + haversine heuristic"},
+      {"id": "ml_eta", "zone": "brain", "type": "ml", "label": "ETA prediction", "sublabel": "LinReg + RandomForest + NeuralNet"},
+      {"id": "ml_fare", "zone": "brain", "type": "ml", "label": "Fare estimation", "sublabel": "RandomForest + KNN"},
+      {"id": "ml_cancel", "zone": "brain", "type": "ml", "label": "Cancellation risk", "sublabel": "Logistic + DecisionTree + AdaBoost"},
+      {"id": "ml_fraud", "zone": "brain", "type": "ml", "label": "Fraud check", "sublabel": "SVM + Naive Bayes"},
+      {"id": "ml_surge", "zone": "brain", "type": "ml", "label": "Surge zones", "sublabel": "K-Means + GMM(EM) + Hierarchical"},
+      {"id": "ml_seg", "zone": "brain", "type": "ml", "label": "Rider segments", "sublabel": "PCA + LDA"},
+      {"id": "ml_shift", "zone": "brain", "type": "ml", "label": "Driver shift", "sublabel": "Hidden Markov Model"},
+      {"id": "ml_causes", "zone": "brain", "type": "ml", "label": "Cancellation causes", "sublabel": "Bayesian Network"}
+    ],
+    "connections": [
+      {"from": "phone", "to": "nginx", "label": "HTTP GET/POST to Elastic IP :80", "kind": "traffic"},
+      {"from": "nginx", "to": "green", "label": "proxy_pass :8000 (live color)", "kind": "traffic"},
+      {"from": "nginx", "to": "blue", "label": "idle (not routed)", "kind": "traffic_inactive"},
+      {"from": "green", "to": "redis", "label": "cache get/set", "kind": "traffic"},
+      {"from": "green", "to": "sqlite", "label": "INSERT quote log", "kind": "traffic"},
+      {"from": "green", "to": "citygraph", "label": "load road graph", "kind": "traffic"},
+      {"from": "green", "to": "astar", "label": "route()", "kind": "internal"},
+      {"from": "green", "to": "ml_eta", "label": "predict", "kind": "internal"},
+      {"from": "green", "to": "ml_fare", "label": "predict", "kind": "internal"},
+      {"from": "green", "to": "ml_cancel", "label": "predict", "kind": "internal"},
+      {"from": "green", "to": "ml_surge", "label": "analytics", "kind": "internal"},
+      {"from": "github", "to": "ghcr", "label": "docker build + push", "kind": "deploy"},
+      {"from": "github", "to": "nginx", "label": "SSH: blue-green swap + nginx reload", "kind": "deploy"},
+      {"from": "ghcr", "to": "green", "label": "docker pull sha-<commit>", "kind": "deploy"},
+      {"from": "ghcr", "to": "blue", "label": "rollback: pull old sha", "kind": "deploy_rollback"}
+    ],
+    "annotations": [
+      "Only ONE color (blue/green) serves traffic at a time; the other is kept for instant rollback.",
+      "New color must pass /health before nginx is repointed -> zero-downtime deploys.",
+      "Rollback = re-run the workflow with an old commit SHA; build is skipped, old image redeployed.",
+      "Redis + SQLite volume + city_graph.json are the three stateful/asset pieces that must persist across swaps."
+    ]
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "feature": "ETA prediction",
+  "endpoints": [
+    "POST /predict-eta",
+    "used inside POST /quote and /route"
+  ],
+  "inputs": {
+    "distance": "km",
+    "hour": "0-23",
+    "weather": "0 clear / 1 rain",
+    "traffic": "0..1"
+  },
+  "algorithms": [
+    {
+      "name": "Linear Regression",
+      "role": "fast baseline, linear trend of duration vs features"
+    },
+    {
+      "name": "Random Forest Regressor",
+      "role": "captures non-linear interactions (120 trees)"
+    },
+    {
+      "name": "Neural Network (MLPRegressor 64-32)",
+      "role": "trained on standardized features"
+    }
+  ],
+  "combination": "ensemble_min = mean(linear, random_forest, neural_network)",
+  "output": {
+    "linear_regression": "min",
+    "random_forest": "min",
+    "neural_network": "min",
+    "ensemble_min": "min (used downstream)",
+    "model_r2": "training R^2 per model"
+  },
+  "flow": [
+    "receive distance/hour/weather/traffic",
+    "each model predicts duration",
+    "average the three -> ensemble_min",
+    "return all four + R2 scores"
+  ],
+  "type": "supervised regression",
+  "image_prompt": "Draw a clean left-to-right flowchart for the RideIQ 'ETA prediction' feature. Show input fields entering a box of ML models running in parallel, their outputs combined into a single result, then returned to the Android app as JSON. Flat modern style, rounded boxes, labeled arrows. Three parallel model boxes (Linear Regression, Random Forest, Neural Network) feeding an averaging node labeled 'ensemble = mean'."
+}

@@ -1,0 +1,191 @@
+# =============================================================================
+# RideIQ deploy: build the backend image in the cloud, push to ghcr.io, then
+# SSH into the EC2 VM and run a blue-green swap behind nginx (public port 80).
+# Same pattern as the CICD POC linux-deploy.yml, adapted for the RideIQ backend
+# (adds a shared redis + a volume for the SQLite DB; longer health wait).
+#
+# One-time prerequisites on the repo (Settings -> Secrets and variables -> Actions):
+#   EC2_HOST     = ec2-3-99-66-9.ca-central-1.compute.amazonaws.com   (public DNS or Elastic IP)
+#   EC2_USER     = ubuntu
+#   EC2_SSH_KEY  = full contents of your deploy .pem
+# And make the ghcr.io package public so the VM pulls with no login.
+# =============================================================================
+
+name: deploy-rideiq
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+    inputs:
+      rollback_sha:
+        description: "Full commit SHA to redeploy (blank = deploy latest build)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # BUILD: build the RideIQ backend image, push sha-<commit> + latest to ghcr.io
+  # ---------------------------------------------------------------------------
+  build-and-push:
+    if: ${{ github.event.inputs.rollback_sha == '' }}   # rollback skips build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Lowercase the image name
+        id: img
+        run: echo "name=${IMAGE_NAME,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ steps.img.outputs.name }}
+          tags: |
+            type=sha,format=long
+            type=raw,value=latest
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./rideiq-backend        # build the RideIQ backend (not the POC)
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ---------------------------------------------------------------------------
+  # DEPLOY: SSH into EC2 and run the blue-green swap ON the VM.
+  # The image is PUBLIC, so the VM pulls it with no login.
+  # ---------------------------------------------------------------------------
+  deploy:
+    needs: build-and-push
+    if: ${{ always() && (needs.build-and-push.result == 'success' || github.event.inputs.rollback_sha != '') }}
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-rideiq
+      cancel-in-progress: false
+
+    steps:
+      - name: Compute image ref
+        id: ref
+        run: |
+          IMAGE="${GITHUB_REPOSITORY,,}"
+          SHA="${{ github.event.inputs.rollback_sha }}"
+          if [ -z "$SHA" ]; then SHA="$GITHUB_SHA"; fi
+          echo "ref=${REGISTRY}/${IMAGE}:sha-${SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy to EC2 over SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            set -e
+            REF="${{ steps.ref.outputs.ref }}"
+            echo "Target image: $REF"
+
+            docker pull "$REF"
+
+            # Private network for app + nginx + redis (create once).
+            docker network inspect appnet >/dev/null 2>&1 || docker network create appnet
+
+            # Shared redis cache -- started once, NEVER swapped.
+            docker ps -q -f "name=^rideiq-redis$" | grep -q . || \
+              docker run -d --name rideiq-redis --network appnet --restart unless-stopped redis:7-alpine
+
+            # Which color is live now? Bring up the OTHER one.
+            if docker ps -q -f "name=^rideiq-blue$" | grep -q .; then
+              OLD=blue;  NEW=green
+            elif docker ps -q -f "name=^rideiq-green$" | grep -q .; then
+              OLD=green; NEW=blue
+            else
+              OLD="";    NEW=blue
+            fi
+            NEW_NAME="rideiq-$NEW"
+            echo "Old color: '$OLD'  ->  New color: '$NEW'"
+
+            # Clear a stale container with the new name, then start NEW color.
+            # No -p: nginx reaches it by name over the private network.
+            docker ps -aq -f "name=^${NEW_NAME}$" | grep -q . && docker rm -f "$NEW_NAME" || true
+            docker run -d --name "$NEW_NAME" --network appnet --restart unless-stopped \
+              -e REDIS_URL=redis://rideiq-redis:6379/0 \
+              -e DB_PATH=/data/rideiq.db \
+              -e INSTANCE_ID="$NEW" \
+              -v rideiq_data:/data \
+              "$REF"
+
+            # Health-check NEW color BEFORE any traffic hits it. Up to ~60s because
+            # the app trains 15 ML models on boot. If it never comes up, we never
+            # switch nginx and the old color keeps serving -> zero downtime.
+            HEALTHY=0
+            for i in $(seq 1 30); do
+              if docker exec "$NEW_NAME" python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)" >/dev/null 2>&1; then
+                HEALTHY=1; break
+              fi
+              echo "waiting for $NEW_NAME to be healthy... ($i)"
+              sleep 2
+            done
+            if [ "$HEALTHY" -ne 1 ]; then
+              echo "NEW color never became healthy. Aborting WITHOUT switching."
+              docker logs "$NEW_NAME" || true
+              docker rm -f "$NEW_NAME" || true
+              exit 1
+            fi
+            echo "$NEW_NAME is healthy."
+
+            # Write nginx config pointing at the NEW color.
+            cat > /tmp/default.conf <<EOF
+            upstream app { server ${NEW_NAME}:8000; }
+            server {
+              listen 80;
+              location / {
+                proxy_pass http://app;
+                proxy_set_header Host \$host;
+                proxy_set_header X-Real-IP \$remote_addr;
+                proxy_read_timeout 60s;
+              }
+            }
+            EOF
+
+            # Start nginx on host port 80 the first time; otherwise just reload.
+            if ! docker ps -aq -f "name=^cicd-edge$" | grep -q .; then
+              echo "Starting nginx edge on port 80"
+              docker run -d --name cicd-edge --network appnet --restart unless-stopped -p 80:80 nginx:1.27-alpine
+              sleep 2
+            fi
+            docker cp /tmp/default.conf cicd-edge:/etc/nginx/conf.d/default.conf
+            docker exec cicd-edge nginx -s reload
+            echo "nginx now routing to $NEW_NAME."
+
+            # Drain and retire the OLD color.
+            if [ -n "$OLD" ]; then
+              echo "Draining rideiq-$OLD for 30s..."
+              sleep 30
+              docker rm -f "rideiq-$OLD" || true
+              echo "Old color removed."
+            fi
+
+            echo "Deployed $REF with zero downtime (active color: $NEW)."

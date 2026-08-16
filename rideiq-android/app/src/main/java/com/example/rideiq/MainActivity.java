@@ -59,6 +59,8 @@ public class MainActivity extends AppCompatActivity {
                 analytics(ApiClient.get().driverShift(), "Driver shift"));
         ((Button) findViewById(R.id.causesBtn)).setOnClickListener(v ->
                 analytics(ApiClient.get().cancellationCauses(), "Cancellation causes"));
+
+        NavBar.setup(this, findViewById(R.id.bottomNav), R.id.nav_insights);
     }
 
     private double d(EditText e, double def) {

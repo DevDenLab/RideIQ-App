@@ -33,4 +33,15 @@
     <string name="mode_drive">🚗 Driving</string>
     <string name="mode_walk">🚶 Walking</string>
     <string name="menu_insights">Insights</string>
+    <string name="nav_map">Map</string>
+    <string name="nav_insights">Insights</string>
+    <string name="nav_profile">Profile</string>
+    <string name="profile_title">Profile</string>
+    <string name="profile_sub">Your RideIQ preferences</string>
+    <string name="settings_nav">Navigation</string>
+    <string name="settings_voice">Voice guidance: male, 1.2× speed</string>
+    <string name="settings_mode">Default travel mode: driving</string>
+    <string name="settings_units">Distance units: kilometres</string>
+    <string name="about_title">About</string>
+    <string name="about_body">RideIQ — a self-hosted navigation app powered by machine learning. Maps and routing use free OpenStreetMap data. Version 1.0.</string>
 </resources>

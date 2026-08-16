@@ -48,7 +48,7 @@
         android:theme="@style/Theme.Material3.DayNight"
         android:usesCleartextTraffic="true" >
         <activity
-            android:name="com.example.rideiq.MainActivity"
+            android:name="com.example.rideiq.RouteMapActivity"
             android:exported="true" >
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -57,8 +57,9 @@
             </intent-filter>
         </activity>
         <activity
-            android:name="com.example.rideiq.RouteMapActivity"
-            android:exported="false" />
+            android:name="com.example.rideiq.MainActivity"
+            android:exported="false"
+            android:label="Insights" />
 
         <provider
             android:name="androidx.startup.InitializationProvider"

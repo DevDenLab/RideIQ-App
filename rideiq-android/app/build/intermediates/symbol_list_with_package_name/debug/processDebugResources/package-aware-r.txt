@@ -3089,6 +3089,7 @@ id action_container
 id action_context_bar
 id action_divider
 id action_image
+id action_insights
 id action_menu_divider
 id action_menu_presenter
 id action_mode_bar
@@ -3712,6 +3713,7 @@ layout select_dialog_item_material
 layout select_dialog_multichoice_material
 layout select_dialog_singlechoice_material
 layout support_simple_spinner_dropdown_item
+menu map_menu
 plurals mtrl_badge_content_description
 string abc_action_bar_home_description
 string abc_action_bar_up_description
@@ -3854,6 +3856,7 @@ string material_timepicker_minute
 string material_timepicker_pm
 string material_timepicker_select_time
 string material_timepicker_text_input_mode_description
+string menu_insights
 string mode_drive
 string mode_walk
 string mtrl_badge_numberless_content_description

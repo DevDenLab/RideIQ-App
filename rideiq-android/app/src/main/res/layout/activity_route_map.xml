@@ -127,4 +127,13 @@
             android:layout_height="wrap_content"
             android:text="@string/reset_map" />
     </LinearLayout>
+
+    <com.google.android.material.bottomnavigation.BottomNavigationView
+        android:id="@+id/bottomNav"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        app:menu="@menu/bottom_nav"
+        app:labelVisibilityMode="labeled"
+        xmlns:app="http://schemas.android.com/apk/res-auto" />
 </LinearLayout>

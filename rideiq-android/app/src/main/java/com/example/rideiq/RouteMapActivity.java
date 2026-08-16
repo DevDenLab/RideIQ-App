@@ -31,6 +31,8 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
+import com.google.android.material.bottomnavigation.BottomNavigationView;
+
 import org.osmdroid.config.Configuration;
 import org.osmdroid.events.MapEventsReceiver;
 import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase;
@@ -151,6 +153,7 @@ public class RouteMapActivity extends AppCompatActivity {
         ((Button) findViewById(R.id.goBtn)).setOnClickListener(v -> onGoTapped());
         modeBtn = findViewById(R.id.modeBtn);
         modeBtn.setOnClickListener(v -> toggleMode());
+        NavBar.setup(this, (BottomNavigationView) findViewById(R.id.bottomNav), R.id.nav_map);
 
         lm = (LocationManager) getSystemService(LOCATION_SERVICE);
         tts = new TextToSpeech(this, status -> {
@@ -593,19 +596,6 @@ public class RouteMapActivity extends AppCompatActivity {
         else if ("Drop-off".equals(label) && destField != null) destField.setText(addr);
     }
 
-    // Toolbar menu → reach the other sections (Insights = the ML analytics screen).
-    @Override public boolean onCreateOptionsMenu(Menu menu) {
-        getMenuInflater().inflate(R.menu.map_menu, menu);
-        return true;
-    }
-
-    @Override public boolean onOptionsItemSelected(@NonNull MenuItem item) {
-        if (item.getItemId() == R.id.action_insights) {
-            startActivity(new android.content.Intent(this, MainActivity.class));
-            return true;
-        }
-        return super.onOptionsItemSelected(item);
-    }
 
     /** A short dashed line bridging a pin to the nearest routable node (null if the gap is tiny). */
     private Polyline addConnector(GeoPoint a, GeoPoint b) {

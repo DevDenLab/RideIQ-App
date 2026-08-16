@@ -1,5 +1,6 @@
 R_DEF: Internal format may change without notice
 local
+id action_insights
 id analyticsText
 id causesBtn
 id destField
@@ -31,6 +32,7 @@ id surgeBtn
 id traffic
 layout activity_main
 layout activity_route_map
+menu map_menu
 string app_name
 string causes
 string dest_hint
@@ -44,6 +46,7 @@ string hint_surge
 string hint_traffic
 string location_needed
 string map_hint
+string menu_insights
 string mode_drive
 string mode_walk
 string my_location

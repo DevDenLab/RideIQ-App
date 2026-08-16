@@ -19,5 +19,6 @@
             </intent-filter>
         </activity>
         <activity android:name=".MainActivity" android:exported="false" android:label="Insights" />
+        <activity android:name=".ProfileActivity" android:exported="false" android:label="Profile" />
     </application>
 </manifest>

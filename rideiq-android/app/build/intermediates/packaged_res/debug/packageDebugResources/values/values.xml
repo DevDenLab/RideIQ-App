@@ -13,6 +13,7 @@
     <string name="hint_traffic">Traffic (0–1)</string>
     <string name="location_needed">Location permission is needed to show where you are.</string>
     <string name="map_hint">Your pickup is set to your location. Tap the map to set your drop-off — or drag a pin.</string>
+    <string name="menu_insights">Insights</string>
     <string name="mode_drive">🚗 Driving</string>
     <string name="mode_walk">🚶 Walking</string>
     <string name="my_location">My location</string>

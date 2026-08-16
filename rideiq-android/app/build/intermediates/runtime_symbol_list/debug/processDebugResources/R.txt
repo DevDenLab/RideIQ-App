@@ -3088,6 +3088,7 @@ int id action_container 0x7f080037
 int id action_context_bar 0x7f080038
 int id action_divider 0x7f080039
 int id action_image 0x7f08003a
+int id action_insights 0x7f0801e6
 int id action_menu_divider 0x7f08003b
 int id action_menu_presenter 0x7f08003c
 int id action_mode_bar 0x7f08003d
@@ -3711,6 +3712,7 @@ int layout select_dialog_item_material 0x7f0b006a
 int layout select_dialog_multichoice_material 0x7f0b006b
 int layout select_dialog_singlechoice_material 0x7f0b006c
 int layout support_simple_spinner_dropdown_item 0x7f0b006d
+int menu map_menu 0x7f110000
 int plurals mtrl_badge_content_description 0x7f0d0000
 int string abc_action_bar_home_description 0x7f0e0000
 int string abc_action_bar_up_description 0x7f0e0001
@@ -3853,6 +3855,7 @@ int string material_timepicker_minute 0x7f0e0089
 int string material_timepicker_pm 0x7f0e008a
 int string material_timepicker_select_time 0x7f0e008b
 int string material_timepicker_text_input_mode_description 0x7f0e008c
+int string menu_insights 0x7f0e00f6
 int string mode_drive 0x7f0e008d
 int string mode_walk 0x7f0e008e
 int string mtrl_badge_numberless_content_description 0x7f0e008f

@@ -4,8 +4,8 @@
         "source": "C:\\Users\\tatva\\.gradle\\daemon\\9.3.0\\com.example.rideiq.app-main-34:\\layout\\activity_route_map.xml"
     },
     {
-        "merged": "com.example.rideiq.app-debug-32:/layout_activity_route_map.xml.flat",
-        "source": "com.example.rideiq.app-main-34:/layout/activity_route_map.xml"
+        "merged": "com.example.rideiq.app-debug-32:/menu_map_menu.xml.flat",
+        "source": "com.example.rideiq.app-main-34:/menu/map_menu.xml"
     },
     {
         "merged": "C:\\Users\\tatva\\.gradle\\daemon\\9.3.0\\com.example.rideiq.app-debug-32:\\layout_activity_main.xml.flat",

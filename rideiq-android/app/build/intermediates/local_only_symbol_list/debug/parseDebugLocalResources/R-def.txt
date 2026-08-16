@@ -1,7 +1,11 @@
 R_DEF: Internal format may change without notice
 local
+drawable ic_nav_insights
+drawable ic_nav_map
+drawable ic_nav_profile
 id action_insights
 id analyticsText
+id bottomNav
 id causesBtn
 id destField
 id distance
@@ -15,6 +19,9 @@ id mapBtn
 id modeBtn
 id myLocBtn
 id navBanner
+id nav_insights
+id nav_map
+id nav_profile
 id pickupText
 id plotView
 id progress
@@ -31,8 +38,12 @@ id surge
 id surgeBtn
 id traffic
 layout activity_main
+layout activity_profile
 layout activity_route_map
+menu bottom_nav
 menu map_menu
+string about_body
+string about_title
 string app_name
 string causes
 string dest_hint
@@ -50,16 +61,25 @@ string menu_insights
 string mode_drive
 string mode_walk
 string my_location
+string nav_insights
+string nav_map
+string nav_profile
 string open_map
 string ops_analytics
 string ops_hint
 string pickup_waiting
 string plot_desc
+string profile_sub
+string profile_title
 string raining
 string request_ride
 string reset_map
 string route_btn
 string segments
+string settings_mode
+string settings_nav
+string settings_units
+string settings_voice
 string start_hint
 string start_trip
 string stop_trip

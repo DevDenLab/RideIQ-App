@@ -58,6 +58,7 @@ public class ApiModels {
         public java.util.List<Step> steps;   // turn-by-turn maneuvers for voice navigation
         public String mode;                  // "drive" or "walk" (which graph served this)
         @SerializedName("mode_fallback") public boolean modeFallback;  // true if walk fell back to drive
+        public java.util.List<RouteResponse> alternatives;   // slower alternative routes
     }
 
     /** One turn-by-turn maneuver: where to act, what to do, and distance to it. */

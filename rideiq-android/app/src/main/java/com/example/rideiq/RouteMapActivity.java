@@ -7,8 +7,10 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.DashPathEffect;
 import android.graphics.Paint;
+import android.graphics.Typeface;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
+import android.graphics.drawable.GradientDrawable;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
@@ -19,9 +21,12 @@ import android.speech.tts.Voice;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.HorizontalScrollView;
+import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -106,6 +111,13 @@ public class RouteMapActivity extends AppCompatActivity {
     private String travelMode = "drive";     // "drive" or "walk"
     private Button modeBtn;
 
+    // route options (alternatives)
+    private HorizontalScrollView optionsScroll;
+    private LinearLayout optionsRow;
+    private List<ApiModels.RouteResponse> routeOptions = new ArrayList<>();
+    private int selectedOption = 0;
+    private String lastRouteLabel = "Route";
+
     // navigation state
     private LocationManager lm;
     private TextToSpeech tts;
@@ -134,6 +146,8 @@ public class RouteMapActivity extends AppCompatActivity {
         startBtn = findViewById(R.id.startBtn);
         startField = findViewById(R.id.startField);
         destField = findViewById(R.id.destField);
+        optionsScroll = findViewById(R.id.optionsScroll);
+        optionsRow = findViewById(R.id.optionsRow);
 
         map = findViewById(R.id.map);
         map.setTileSource(STREET);
@@ -411,7 +425,12 @@ public class RouteMapActivity extends AppCompatActivity {
                     info.setText("Couldn't route between those points (they may be outside Edmonton).");
                     return;
                 }
-                drawRoute(r.body(), label);
+                ApiModels.RouteResponse body = r.body();
+                if (navigating) { drawRoute(body, label); return; }
+                List<ApiModels.RouteResponse> opts = new ArrayList<>();
+                opts.add(body);
+                if (body.alternatives != null) opts.addAll(body.alternatives);
+                showRouteOptions(opts, label);
             }
             @Override public void onFailure(@NonNull Call<ApiModels.RouteResponse> c, @NonNull Throwable t) {
                 progress.setVisibility(View.GONE);
@@ -465,6 +484,88 @@ public class RouteMapActivity extends AppCompatActivity {
         map.invalidate();
     }
 
+    // ───────────────────────── route options (alternatives) ─────────────────────────
+    private void showRouteOptions(List<ApiModels.RouteResponse> opts, String label) {
+        routeOptions = opts;
+        selectedOption = 0;
+        lastRouteLabel = label;
+        buildOptionCards();
+        optionsScroll.setVisibility(opts.size() > 1 ? View.VISIBLE : View.GONE);
+        drawRoute(opts.get(0), label);
+    }
+
+    private void selectOption(int i) {
+        if (routeOptions == null || i < 0 || i >= routeOptions.size()) return;
+        selectedOption = i;
+        buildOptionCards();
+        drawRoute(routeOptions.get(i), lastRouteLabel);
+    }
+
+    private void buildOptionCards() {
+        optionsRow.removeAllViews();
+        if (routeOptions == null || routeOptions.isEmpty()) return;
+        float density = getResources().getDisplayMetrics().density;
+        double baseEta = routeOptions.get(0).etaMin;
+        int pad = (int) (10 * density);
+        for (int i = 0; i < routeOptions.size(); i++) {
+            final int idx = i;
+            ApiModels.RouteResponse o = routeOptions.get(i);
+            boolean sel = (i == selectedOption);
+            boolean walk = "walk".equals(o.mode);
+
+            LinearLayout card = new LinearLayout(this);
+            card.setOrientation(LinearLayout.VERTICAL);
+            card.setPadding(pad, pad, pad, pad);
+            GradientDrawable bg = new GradientDrawable();
+            bg.setCornerRadius(12 * density);
+            bg.setColor(Color.parseColor(sel ? "#EEEDFE" : "#FFFFFF"));
+            bg.setStroke((int) ((sel ? 2 : 1) * density), Color.parseColor(sel ? "#534AB7" : "#DDDDDD"));
+            card.setBackground(bg);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    (int) (152 * density), ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.setMargins(0, 0, (int) (6 * density), 0);
+            card.setLayoutParams(lp);
+
+            TextView top = new TextView(this);
+            if (i == 0) { top.setText("Recommended"); top.setTextColor(Color.parseColor("#3C3489")); }
+            else {
+                int delta = (int) Math.round(o.etaMin - baseEta);
+                top.setText(delta > 0 ? "+" + delta + " min" : "Alternative");
+                top.setTextColor(Color.parseColor("#888888"));
+            }
+            top.setTextSize(11);
+            card.addView(top);
+
+            TextView eta = new TextView(this);
+            eta.setText(String.format(Locale.US, "%.0f min", o.etaMin));
+            eta.setTextSize(18);
+            eta.setTypeface(null, Typeface.BOLD);
+            eta.setTextColor(Color.parseColor("#1A1A1A"));
+            card.addView(eta);
+
+            TextView sub = new TextView(this);
+            String fare = walk ? "walk" : String.format(Locale.US, "$%.2f", o.fareUsd);
+            sub.setText(String.format(Locale.US, "%.1f km · %s", o.distanceKm, fare));
+            sub.setTextSize(12);
+            sub.setTextColor(Color.parseColor("#666666"));
+            card.addView(sub);
+
+            TextView arr = new TextView(this);
+            arr.setText("Arrive " + arrivalTime(o.etaMin));
+            arr.setTextSize(11);
+            arr.setTextColor(Color.parseColor("#888888"));
+            card.addView(arr);
+
+            card.setOnClickListener(v -> selectOption(idx));
+            optionsRow.addView(card);
+        }
+    }
+
+    private String arrivalTime(double etaMin) {
+        long ms = System.currentTimeMillis() + (long) (etaMin * 60000);
+        return new java.text.SimpleDateFormat("h:mm a", Locale.US).format(new java.util.Date(ms));
+    }
+
     // ───────────────────────── navigation ─────────────────────────
     private final LocationListener navListener = new LocationListener() {
         @Override public void onLocationChanged(@NonNull Location loc) { onNavLocation(loc); }
@@ -485,6 +586,7 @@ public class RouteMapActivity extends AppCompatActivity {
         offRouteCount = 0;
         startBtn.setText(R.string.stop_trip);
         navBanner.setVisibility(View.VISIBLE);
+        optionsScroll.setVisibility(View.GONE);   // hide the option cards while navigating
         navBanner.setText("Starting navigation…");
         myLocation.enableMyLocation();
         map.getController().setZoom(18.0);
@@ -620,6 +722,8 @@ public class RouteMapActivity extends AppCompatActivity {
         removeConnectors();
         if (dropoffMarker != null) { map.getOverlays().remove(dropoffMarker); dropoffMarker = null; }
         navSteps = new ArrayList<>();
+        routeOptions = new ArrayList<>();
+        optionsScroll.setVisibility(View.GONE);
         startBtn.setEnabled(false);
         dropoffText.setText(R.string.dropoff_hint);
         info.setText("Drop-off cleared. Tap the map to set a new one.");

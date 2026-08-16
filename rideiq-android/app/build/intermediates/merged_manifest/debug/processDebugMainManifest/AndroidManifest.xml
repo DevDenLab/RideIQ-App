@@ -60,6 +60,10 @@
             android:name="com.example.rideiq.MainActivity"
             android:exported="false"
             android:label="Insights" />
+        <activity
+            android:name="com.example.rideiq.ProfileActivity"
+            android:exported="false"
+            android:label="Profile" />
 
         <provider
             android:name="androidx.startup.InitializationProvider"

@@ -2934,6 +2934,9 @@ int drawable ic_mtrl_checked_circle 0x7f07009a
 int drawable ic_mtrl_chip_checked_black 0x7f07009b
 int drawable ic_mtrl_chip_checked_circle 0x7f07009c
 int drawable ic_mtrl_chip_close_circle 0x7f07009d
+int drawable ic_nav_insights 0x7f0700fd
+int drawable ic_nav_map 0x7f0700fe
+int drawable ic_nav_profile 0x7f0700ff
 int drawable ic_search_black_24 0x7f07009e
 int drawable indeterminate_static 0x7f07009f
 int drawable m3_avd_hide_password 0x7f0700a0
@@ -3118,6 +3121,7 @@ int id beginOnFirstDraw 0x7f080054
 int id beginning 0x7f080055
 int id blocking 0x7f080056
 int id bottom 0x7f080057
+int id bottomNav 0x7f0801e7
 int id bounce 0x7f080058
 int id bubble_description 0x7f080059
 int id bubble_image 0x7f08005a
@@ -3320,6 +3324,9 @@ int id mtrl_view_tag_bottom_padding 0x7f08011e
 int id multiply 0x7f08011f
 int id myLocBtn 0x7f080120
 int id navBanner 0x7f080121
+int id nav_insights 0x7f0801e8
+int id nav_map 0x7f0801e9
+int id nav_profile 0x7f0801ea
 int id navigation_bar_item_active_indicator_view 0x7f080122
 int id navigation_bar_item_icon_container 0x7f080123
 int id navigation_bar_item_icon_view 0x7f080124
@@ -3631,6 +3638,7 @@ int layout abc_search_view 0x7f0b0019
 int layout abc_select_dialog_material 0x7f0b001a
 int layout abc_tooltip 0x7f0b001b
 int layout activity_main 0x7f0b001c
+int layout activity_profile 0x7f0b006e
 int layout activity_route_map 0x7f0b001d
 int layout bonuspack_bubble 0x7f0b001e
 int layout custom_dialog 0x7f0b001f
@@ -3712,6 +3720,7 @@ int layout select_dialog_item_material 0x7f0b006a
 int layout select_dialog_multichoice_material 0x7f0b006b
 int layout select_dialog_singlechoice_material 0x7f0b006c
 int layout support_simple_spinner_dropdown_item 0x7f0b006d
+int menu bottom_nav 0x7f110001
 int menu map_menu 0x7f110000
 int plurals mtrl_badge_content_description 0x7f0d0000
 int string abc_action_bar_home_description 0x7f0e0000
@@ -3742,7 +3751,9 @@ int string abc_shareactionprovider_share_with 0x7f0e0018
 int string abc_shareactionprovider_share_with_application 0x7f0e0019
 int string abc_toolbar_collapse_description 0x7f0e001a
 int string about 0x7f0e001b
+int string about_body 0x7f0e00f7
 int string about_message 0x7f0e001c
+int string about_title 0x7f0e00f8
 int string androidx_startup 0x7f0e001d
 int string app_name 0x7f0e001e
 int string appbar_scrolling_view_behavior 0x7f0e001f
@@ -3921,6 +3932,9 @@ int string mtrl_switch_track_path 0x7f0e00ca
 int string mtrl_timepicker_cancel 0x7f0e00cb
 int string mtrl_timepicker_confirm 0x7f0e00cc
 int string my_location 0x7f0e00cd
+int string nav_insights 0x7f0e00f9
+int string nav_map 0x7f0e00fa
+int string nav_profile 0x7f0e00fb
 int string offline 0x7f0e00ce
 int string open_map 0x7f0e00cf
 int string ops_analytics 0x7f0e00d0
@@ -3932,6 +3946,8 @@ int string path_password_eye_mask_visible 0x7f0e00d5
 int string path_password_strike_through 0x7f0e00d6
 int string pickup_waiting 0x7f0e00d7
 int string plot_desc 0x7f0e00d8
+int string profile_sub 0x7f0e00fc
+int string profile_title 0x7f0e00fd
 int string public_transport 0x7f0e00d9
 int string raining 0x7f0e00da
 int string request_ride 0x7f0e00db
@@ -3948,6 +3964,10 @@ int string set_mode_hide_me 0x7f0e00e5
 int string set_mode_offline 0x7f0e00e6
 int string set_mode_online 0x7f0e00e7
 int string set_mode_show_me 0x7f0e00e8
+int string settings_mode 0x7f0e00fe
+int string settings_nav 0x7f0e00ff
+int string settings_units 0x7f0e0100
+int string settings_voice 0x7f0e0101
 int string side_sheet_accessibility_pane_title 0x7f0e00e9
 int string side_sheet_behavior 0x7f0e00ea
 int string snapshot 0x7f0e00eb

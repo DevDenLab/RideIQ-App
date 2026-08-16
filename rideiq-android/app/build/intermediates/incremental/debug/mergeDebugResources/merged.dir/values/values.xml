@@ -1894,7 +1894,9 @@
     <string name="abc_shareactionprovider_share_with_application">Share with <ns2:g example="Mail" id="application_name">%s</ns2:g></string>
     <string name="abc_toolbar_collapse_description">Collapse</string>
     <string name="about">About</string>
+    <string name="about_body">RideIQ — a self-hosted navigation app powered by machine learning. Maps and routing use free OpenStreetMap data. Version 1.0.</string>
     <string name="about_message">This software uses map data provided by OpenStreetMap.org</string>
+    <string name="about_title">About</string>
     <string name="androidx_startup" translatable="false">androidx.startup</string>
     <string name="app_name">RideIQ</string>
     <string name="appbar_scrolling_view_behavior" translatable="false">com.google.android.material.appbar.AppBarLayout$ScrollingViewBehavior</string>
@@ -2081,6 +2083,9 @@
     <string description="Button text to indicate that the widget will ignore the user&apos;s selection [CHAR_LIMIT=16]" name="mtrl_timepicker_cancel">Cancel</string>
     <string description="Button text to indicate that the widget will save the user&apos;s selection [CHAR_LIMIT=16]" name="mtrl_timepicker_confirm">OK</string>
     <string name="my_location">My location</string>
+    <string name="nav_insights">Insights</string>
+    <string name="nav_map">Map</string>
+    <string name="nav_profile">Profile</string>
     <string name="offline">Offline mode</string>
     <string name="open_map">Open route map</string>
     <string name="ops_analytics">Ops analytics</string>
@@ -2092,6 +2097,8 @@
     <string name="path_password_strike_through" translatable="false">M3.27,4.27 L19.74,20.74</string>
     <string name="pickup_waiting">Pickup: waiting for your location…</string>
     <string name="plot_desc">Analytics plot from the ML backend</string>
+    <string name="profile_sub">Your RideIQ preferences</string>
+    <string name="profile_title">Profile</string>
     <string name="public_transport">Public transport</string>
     <string name="raining">Raining</string>
     <string name="request_ride">Request a ride</string>
@@ -2110,6 +2117,10 @@
     <string name="set_mode_offline">Set to offline mode</string>
     <string name="set_mode_online">Set to online mode</string>
     <string name="set_mode_show_me">showing and tracking my current location</string>
+    <string name="settings_mode">Default travel mode: driving</string>
+    <string name="settings_nav">Navigation</string>
+    <string name="settings_units">Distance units: kilometres</string>
+    <string name="settings_voice">Voice guidance: male, 1.2× speed</string>
     <string description="Title of the side sheet&apos;s accessibility pane that is spoken by TalkBack when the side sheet appears on screen. [CHAR_LIMIT=NONE]" name="side_sheet_accessibility_pane_title">Side Sheet</string>
     <string name="side_sheet_behavior" translatable="false">com.google.android.material.sidesheet.SideSheetBehavior</string>
     <string name="snapshot">Snapshot</string>

@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="about_body">RideIQ — a self-hosted navigation app powered by machine learning. Maps and routing use free OpenStreetMap data. Version 1.0.</string>
+    <string name="about_title">About</string>
     <string name="app_name">RideIQ</string>
     <string name="causes">Cancel causes</string>
     <string name="dest_hint">Destination address</string>
@@ -17,16 +19,25 @@
     <string name="mode_drive">🚗 Driving</string>
     <string name="mode_walk">🚶 Walking</string>
     <string name="my_location">My location</string>
+    <string name="nav_insights">Insights</string>
+    <string name="nav_map">Map</string>
+    <string name="nav_profile">Profile</string>
     <string name="open_map">Open route map</string>
     <string name="ops_analytics">Ops analytics</string>
     <string name="ops_hint">Live ML analytics for operators. Tap to load.</string>
     <string name="pickup_waiting">Pickup: waiting for your location…</string>
     <string name="plot_desc">Analytics plot from the ML backend</string>
+    <string name="profile_sub">Your RideIQ preferences</string>
+    <string name="profile_title">Profile</string>
     <string name="raining">Raining</string>
     <string name="request_ride">Request a ride</string>
     <string name="reset_map">Reset</string>
     <string name="route_btn">Route</string>
     <string name="segments">Rider segments</string>
+    <string name="settings_mode">Default travel mode: driving</string>
+    <string name="settings_nav">Navigation</string>
+    <string name="settings_units">Distance units: kilometres</string>
+    <string name="settings_voice">Voice guidance: male, 1.2× speed</string>
     <string name="start_hint">Start address (blank = my location)</string>
     <string name="start_trip">Start trip</string>
     <string name="stop_trip">Stop trip</string>

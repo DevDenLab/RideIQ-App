@@ -2935,6 +2935,9 @@ drawable ic_mtrl_checked_circle
 drawable ic_mtrl_chip_checked_black
 drawable ic_mtrl_chip_checked_circle
 drawable ic_mtrl_chip_close_circle
+drawable ic_nav_insights
+drawable ic_nav_map
+drawable ic_nav_profile
 drawable ic_search_black_24
 drawable indeterminate_static
 drawable m3_avd_hide_password
@@ -3119,6 +3122,7 @@ id beginOnFirstDraw
 id beginning
 id blocking
 id bottom
+id bottomNav
 id bounce
 id bubble_description
 id bubble_image
@@ -3321,6 +3325,9 @@ id mtrl_view_tag_bottom_padding
 id multiply
 id myLocBtn
 id navBanner
+id nav_insights
+id nav_map
+id nav_profile
 id navigation_bar_item_active_indicator_view
 id navigation_bar_item_icon_container
 id navigation_bar_item_icon_view
@@ -3632,6 +3639,7 @@ layout abc_search_view
 layout abc_select_dialog_material
 layout abc_tooltip
 layout activity_main
+layout activity_profile
 layout activity_route_map
 layout bonuspack_bubble
 layout custom_dialog
@@ -3713,6 +3721,7 @@ layout select_dialog_item_material
 layout select_dialog_multichoice_material
 layout select_dialog_singlechoice_material
 layout support_simple_spinner_dropdown_item
+menu bottom_nav
 menu map_menu
 plurals mtrl_badge_content_description
 string abc_action_bar_home_description
@@ -3743,7 +3752,9 @@ string abc_shareactionprovider_share_with
 string abc_shareactionprovider_share_with_application
 string abc_toolbar_collapse_description
 string about
+string about_body
 string about_message
+string about_title
 string androidx_startup
 string app_name
 string appbar_scrolling_view_behavior
@@ -3922,6 +3933,9 @@ string mtrl_switch_track_path
 string mtrl_timepicker_cancel
 string mtrl_timepicker_confirm
 string my_location
+string nav_insights
+string nav_map
+string nav_profile
 string offline
 string open_map
 string ops_analytics
@@ -3933,6 +3947,8 @@ string path_password_eye_mask_visible
 string path_password_strike_through
 string pickup_waiting
 string plot_desc
+string profile_sub
+string profile_title
 string public_transport
 string raining
 string request_ride
@@ -3949,6 +3965,10 @@ string set_mode_hide_me
 string set_mode_offline
 string set_mode_online
 string set_mode_show_me
+string settings_mode
+string settings_nav
+string settings_units
+string settings_voice
 string side_sheet_accessibility_pane_title
 string side_sheet_behavior
 string snapshot

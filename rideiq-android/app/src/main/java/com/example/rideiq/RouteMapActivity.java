@@ -115,7 +115,7 @@ public class RouteMapActivity extends AppCompatActivity {
     private MyLocationNewOverlay myLocation;
     private boolean satellite = false;
     private String travelMode = "drive";     // "drive" or "walk"
-    private Button modeBtn;
+    private Button driveBtn, walkBtn;
 
     // route options (alternatives)
     private HorizontalScrollView optionsScroll;
@@ -186,8 +186,11 @@ public class RouteMapActivity extends AppCompatActivity {
         ((Button) findViewById(R.id.satBtn)).setOnClickListener(v -> toggleSatellite());
         startBtn.setOnClickListener(v -> { if (navigating) stopTrip(); else startTrip(); });
         ((Button) findViewById(R.id.goBtn)).setOnClickListener(v -> onGoTapped());
-        modeBtn = findViewById(R.id.modeBtn);
-        modeBtn.setOnClickListener(v -> toggleMode());
+        driveBtn = findViewById(R.id.driveBtn);
+        walkBtn = findViewById(R.id.walkBtn);
+        driveBtn.setOnClickListener(v -> setMode("drive"));
+        walkBtn.setOnClickListener(v -> setMode("walk"));
+        updateModePills();
         NavBar.setup(this, (BottomNavigationView) findViewById(R.id.bottomNav), R.id.nav_map);
 
         lm = (LocationManager) getSystemService(LOCATION_SERVICE);
@@ -236,11 +239,28 @@ public class RouteMapActivity extends AppCompatActivity {
         map.invalidate();
     }
 
-    private void toggleMode() {
-        travelMode = travelMode.equals("drive") ? "walk" : "drive";
-        modeBtn.setText(travelMode.equals("walk") ? R.string.mode_walk : R.string.mode_drive);
+    private void setMode(String mode) {
+        if (mode.equals(travelMode)) return;
+        travelMode = mode;
+        updateModePills();
         updateLocationMarker();   // swap car <-> person icon
         if (pickupMarker != null && dropoffMarker != null) routeFromMarkers("Route");  // re-route in new mode
+    }
+
+    /** Segmented Drive|Walk pills: the selected one is filled purple, the other light. */
+    private void updateModePills() {
+        stylePill(driveBtn, "drive".equals(travelMode));
+        stylePill(walkBtn, "walk".equals(travelMode));
+    }
+
+    private void stylePill(Button b, boolean selected) {
+        if (b == null) return;
+        float d = getResources().getDisplayMetrics().density;
+        GradientDrawable bg = new GradientDrawable();
+        bg.setCornerRadius(20 * d);
+        bg.setColor(Color.parseColor(selected ? "#534AB7" : "#EEEDFE"));
+        b.setBackground(bg);
+        b.setTextColor(Color.parseColor(selected ? "#FFFFFF" : "#3C3489"));
     }
 
     // ───────────────────────── my location ─────────────────────────
@@ -493,10 +513,14 @@ public class RouteMapActivity extends AppCompatActivity {
         for (List<Double> p : b.polylineLatlon) routePts.add(new GeoPoint(p.get(0), p.get(1)));
 
         if (routeLine != null) map.getOverlays().remove(routeLine);
+        boolean walkRoute = "walk".equals(b.mode);
         routeLine = new Polyline();
         routeLine.setPoints(routePts);
-        routeLine.getOutlinePaint().setColor(Color.parseColor("#1E6FEB"));
-        routeLine.getOutlinePaint().setStrokeWidth(12f);
+        // Driving = solid blue; walking = dashed green (Google-Maps convention).
+        routeLine.getOutlinePaint().setColor(Color.parseColor(walkRoute ? "#2E7D32" : "#1E6FEB"));
+        routeLine.getOutlinePaint().setStrokeWidth(walkRoute ? 10f : 12f);
+        routeLine.getOutlinePaint().setPathEffect(
+                walkRoute ? new DashPathEffect(new float[]{20f, 14f}, 0f) : null);
         map.getOverlays().add(routeLine);
 
         // Dashed connectors bridge the gap between the actual pins and where the route

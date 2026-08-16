@@ -2897,6 +2897,7 @@ int drawable abc_textfield_search_material 0x7f070075
 int drawable abc_vector_test 0x7f070076
 int drawable avd_hide_password 0x7f070077
 int drawable avd_show_password 0x7f070078
+int drawable bg_card 0x7f070102
 int drawable bonuspack_bubble 0x7f070079
 int drawable btn_checkbox_checked_mtrl 0x7f07007a
 int drawable btn_checkbox_checked_to_unchecked_mtrl_animation 0x7f07007b
@@ -3398,6 +3399,7 @@ int id rightToLeft 0x7f080161
 int id right_icon 0x7f080162
 int id right_side 0x7f080163
 int id rounded 0x7f080164
+int id routePanel 0x7f0801ee
 int id row_index_key 0x7f080165
 int id satBtn 0x7f080166
 int id save_non_transition_alpha 0x7f080167
@@ -3410,6 +3412,7 @@ int id scrollIndicatorDown 0x7f08016d
 int id scrollIndicatorUp 0x7f08016e
 int id scrollView 0x7f08016f
 int id scrollable 0x7f080170
+int id searchCard 0x7f0801ef
 int id search_badge 0x7f080171
 int id search_bar 0x7f080172
 int id search_button 0x7f080173

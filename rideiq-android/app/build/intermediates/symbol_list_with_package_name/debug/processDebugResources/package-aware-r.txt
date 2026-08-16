@@ -2898,6 +2898,7 @@ drawable abc_textfield_search_material
 drawable abc_vector_test
 drawable avd_hide_password
 drawable avd_show_password
+drawable bg_card
 drawable bonuspack_bubble
 drawable btn_checkbox_checked_mtrl
 drawable btn_checkbox_checked_to_unchecked_mtrl_animation
@@ -3399,6 +3400,7 @@ id rightToLeft
 id right_icon
 id right_side
 id rounded
+id routePanel
 id row_index_key
 id satBtn
 id save_non_transition_alpha
@@ -3411,6 +3413,7 @@ id scrollIndicatorDown
 id scrollIndicatorUp
 id scrollView
 id scrollable
+id searchCard
 id search_badge
 id search_bar
 id search_button

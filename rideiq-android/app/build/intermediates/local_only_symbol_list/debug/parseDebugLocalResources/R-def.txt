@@ -1,5 +1,6 @@
 R_DEF: Internal format may change without notice
 local
+drawable bg_card
 drawable ic_marker_car
 drawable ic_marker_person
 drawable ic_nav_insights
@@ -34,7 +35,9 @@ id quoteText
 id raining
 id rating
 id resetBtn
+id routePanel
 id satBtn
+id searchCard
 id segBtn
 id startBtn
 id startField

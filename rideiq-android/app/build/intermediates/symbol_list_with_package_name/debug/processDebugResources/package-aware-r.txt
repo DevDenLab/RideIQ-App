@@ -2927,6 +2927,8 @@ drawable ic_keyboard_black_24dp
 drawable ic_m3_chip_check
 drawable ic_m3_chip_checked_circle
 drawable ic_m3_chip_close
+drawable ic_marker_car
+drawable ic_marker_person
 drawable ic_menu_compass
 drawable ic_menu_mapmode
 drawable ic_menu_mylocation
@@ -3457,6 +3459,7 @@ id stop
 id stretch
 id submenuarrow
 id submit_area
+id suggestionsList
 id surge
 id surgeBtn
 id tabMode

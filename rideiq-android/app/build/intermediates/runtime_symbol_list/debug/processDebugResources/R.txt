@@ -2926,6 +2926,8 @@ int drawable ic_keyboard_black_24dp 0x7f070092
 int drawable ic_m3_chip_check 0x7f070093
 int drawable ic_m3_chip_checked_circle 0x7f070094
 int drawable ic_m3_chip_close 0x7f070095
+int drawable ic_marker_car 0x7f070100
+int drawable ic_marker_person 0x7f070101
 int drawable ic_menu_compass 0x7f070096
 int drawable ic_menu_mapmode 0x7f070097
 int drawable ic_menu_mylocation 0x7f070098
@@ -3456,6 +3458,7 @@ int id stop 0x7f08019d
 int id stretch 0x7f08019e
 int id submenuarrow 0x7f08019f
 int id submit_area 0x7f0801a0
+int id suggestionsList 0x7f0801ed
 int id surge 0x7f0801a1
 int id surgeBtn 0x7f0801a2
 int id tabMode 0x7f0801a3

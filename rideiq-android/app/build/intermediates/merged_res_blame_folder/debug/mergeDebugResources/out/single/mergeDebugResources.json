@@ -1,5 +1,9 @@
 [
     {
+        "merged": "com.example.rideiq.app-debug-32:/drawable_ic_marker_person.xml.flat",
+        "source": "com.example.rideiq.app-main-34:/drawable/ic_marker_person.xml"
+    },
+    {
         "merged": "C:\\Users\\tatva\\.gradle\\daemon\\9.3.0\\com.example.rideiq.app-debug-32:\\drawable_ic_nav_map.xml.flat",
         "source": "C:\\Users\\tatva\\.gradle\\daemon\\9.3.0\\com.example.rideiq.app-main-34:\\drawable\\ic_nav_map.xml"
     },
@@ -26,6 +30,10 @@
     {
         "merged": "C:\\Users\\tatva\\.gradle\\daemon\\9.3.0\\com.example.rideiq.app-debug-32:\\drawable_ic_nav_insights.xml.flat",
         "source": "C:\\Users\\tatva\\.gradle\\daemon\\9.3.0\\com.example.rideiq.app-main-34:\\drawable\\ic_nav_insights.xml"
+    },
+    {
+        "merged": "com.example.rideiq.app-debug-32:/drawable_ic_marker_car.xml.flat",
+        "source": "com.example.rideiq.app-main-34:/drawable/ic_marker_car.xml"
     },
     {
         "merged": "C:\\Users\\tatva\\.gradle\\daemon\\9.3.0\\com.example.rideiq.app-debug-32:\\drawable_ic_nav_profile.xml.flat",

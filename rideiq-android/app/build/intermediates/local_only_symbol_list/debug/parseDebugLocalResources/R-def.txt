@@ -1,5 +1,7 @@
 R_DEF: Internal format may change without notice
 local
+drawable ic_marker_car
+drawable ic_marker_person
 drawable ic_nav_insights
 drawable ic_nav_map
 drawable ic_nav_profile
@@ -36,6 +38,7 @@ id satBtn
 id segBtn
 id startBtn
 id startField
+id suggestionsList
 id surge
 id surgeBtn
 id traffic

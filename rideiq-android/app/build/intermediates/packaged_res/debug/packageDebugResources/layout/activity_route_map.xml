@@ -48,6 +48,15 @@
             android:textSize="12sp" />
     </LinearLayout>
 
+    <ListView
+        android:id="@+id/suggestionsList"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#FFFFFF"
+        android:elevation="4dp"
+        android:layout_marginBottom="4dp"
+        android:visibility="gone" />
+
     <TextView
         android:id="@+id/pickupText"
         android:layout_width="match_parent"

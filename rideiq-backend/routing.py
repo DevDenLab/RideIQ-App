@@ -155,6 +155,49 @@ def _astar(g, start, goal):
     return None, None
 
 
+def _astar_penalized(g, start, goal, penalized, factor):
+    """A* where edges in `penalized` cost `factor`x more — used to find a *different* route."""
+    adj = g["adj"]
+    openq = [(_heuristic(g, start, goal), 0.0, start)]
+    came, gsc = {}, {start: 0.0}
+    while openq:
+        _, gc, cur = heapq.heappop(openq)
+        if cur == goal:
+            path = [cur]
+            while cur in came:
+                cur = came[cur]; path.append(cur)
+            return path[::-1]
+        for nb, w in adj[cur].items():
+            ww = w * (factor if (cur, nb) in penalized else 1.0)
+            ng = gc + ww
+            if ng < gsc.get(nb, 1e18):
+                gsc[nb] = ng; came[nb] = cur
+                heapq.heappush(openq, (ng + _heuristic(g, nb, goal), ng, nb))
+    return None
+
+
+def _path_km(g, path):
+    return sum(g["adj"][a][b] for a, b in zip(path, path[1:]))
+
+
+def _multi_paths(g, s, gnode, want):
+    """Up to `want` distinct routes: best first, then re-run penalizing prior routes' roads."""
+    out, seen, penalized = [], set(), set()
+    for _ in range(want * 3):
+        path = _astar_penalized(g, s, gnode, penalized, 2.4)
+        if not path:
+            break
+        key = tuple(path)
+        if key not in seen:
+            seen.add(key)
+            out.append(path)
+            if len(out) >= want:
+                break
+        for a, b in zip(path, path[1:]):
+            penalized.add((a, b)); penalized.add((b, a))
+    return out
+
+
 def _turns(g, path):
     if len(path) < 3:
         return 0
@@ -262,6 +305,21 @@ def route_latlon(lat1, lon1, lat2, lon2, mode="drive"):
     if path is None:
         return None
     return _result(g, path, dist, used, mode)
+
+
+def route_multi(ax, ay, bx, by, mode="drive", want=3):
+    g, used = _pick(mode)
+    s, gnode = _nearest_node(g, ax, ay), _nearest_node(g, bx, by)
+    return [_result(g, p, _path_km(g, p), used, mode) for p in _multi_paths(g, s, gnode, want)]
+
+
+def route_latlon_multi(lat1, lon1, lat2, lon2, mode="drive", want=3):
+    """Best route + up to (want-1) alternatives between two real-world points."""
+    g, used = _pick(mode)
+    if g["latlon"] is None:
+        return []
+    s, gnode = _nearest_by_latlon(g, lat1, lon1), _nearest_by_latlon(g, lat2, lon2)
+    return [_result(g, p, _path_km(g, p), used, mode) for p in _multi_paths(g, s, gnode, want)]
 
 
 def has_latlon():

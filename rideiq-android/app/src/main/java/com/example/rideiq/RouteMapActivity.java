@@ -15,6 +15,9 @@ import android.location.LocationManager;
 import android.os.Bundle;
 import android.preference.PreferenceManager;
 import android.speech.tts.TextToSpeech;
+import android.speech.tts.Voice;
+import android.view.Menu;
+import android.view.MenuItem;
 import android.view.View;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
@@ -151,7 +154,13 @@ public class RouteMapActivity extends AppCompatActivity {
 
         lm = (LocationManager) getSystemService(LOCATION_SERVICE);
         tts = new TextToSpeech(this, status -> {
-            if (status == TextToSpeech.SUCCESS) { tts.setLanguage(Locale.US); ttsReady = true; }
+            if (status == TextToSpeech.SUCCESS) {
+                tts.setLanguage(Locale.US);
+                tts.setSpeechRate(1.2f);     // faster
+                tts.setPitch(0.85f);         // deeper, more male-sounding
+                selectMaleVoice();
+                ttsReady = true;
+            }
         });
 
         setupMyLocation();
@@ -373,6 +382,7 @@ public class RouteMapActivity extends AppCompatActivity {
                                                      @NonNull Response<ApiModels.ReverseGeocodeResponse> r) {
                         String addr = (r.isSuccessful() && r.body() != null) ? r.body().shortLabel : null;
                         target.setText(label + ": " + (addr != null && !addr.isEmpty() ? addr : "pinned location"));
+                        syncField(label, addr);   // keep the Start/Destination text boxes in sync with the pins
                     }
                     @Override public void onFailure(@NonNull Call<ApiModels.ReverseGeocodeResponse> c,
                                                     @NonNull Throwable t) {
@@ -559,6 +569,42 @@ public class RouteMapActivity extends AppCompatActivity {
 
     private void speak(String text) {
         if (tts != null && ttsReady) tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "nav");
+    }
+
+    /** Prefer an English male voice if the device has one (best-effort; deeper pitch is the fallback). */
+    private void selectMaleVoice() {
+        try {
+            if (tts.getVoices() == null) return;
+            for (Voice v : tts.getVoices()) {
+                String n = v.getName() == null ? "" : v.getName().toLowerCase(Locale.US);
+                if (v.getLocale() != null && "en".equals(v.getLocale().getLanguage())
+                        && n.contains("male") && !n.contains("female")) {
+                    tts.setVoice(v);
+                    return;
+                }
+            }
+        } catch (Exception ignored) { }
+    }
+
+    /** Fill the Start / Destination text box to match a resolved pin address (two-way sync). */
+    private void syncField(String label, String addr) {
+        if (addr == null || addr.isEmpty()) return;
+        if ("Pickup".equals(label) && startField != null) startField.setText(addr);
+        else if ("Drop-off".equals(label) && destField != null) destField.setText(addr);
+    }
+
+    // Toolbar menu → reach the other sections (Insights = the ML analytics screen).
+    @Override public boolean onCreateOptionsMenu(Menu menu) {
+        getMenuInflater().inflate(R.menu.map_menu, menu);
+        return true;
+    }
+
+    @Override public boolean onOptionsItemSelected(@NonNull MenuItem item) {
+        if (item.getItemId() == R.id.action_insights) {
+            startActivity(new android.content.Intent(this, MainActivity.class));
+            return true;
+        }
+        return super.onOptionsItemSelected(item);
     }
 
     /** A short dashed line bridging a pin to the nearest routable node (null if the gap is tiny). */

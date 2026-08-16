@@ -44,6 +44,7 @@
         android:debuggable="true"
         android:extractNativeLibs="false"
         android:label="RideIQ"
+        android:testOnly="true"
         android:theme="@style/Theme.Material3.DayNight"
         android:usesCleartextTraffic="true" >
         <activity

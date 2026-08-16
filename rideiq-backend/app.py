@@ -185,10 +185,12 @@ def graph():
 def route(i: RouteIn):
     """Compute a route with A*, then price it: distance → ETA (ML) → fare (ML)."""
     METRICS["requests"] += 1
-    rt = R.route(i.ax, i.ay, i.bx, i.by, mode=i.mode)
-    if rt is None:
+    routes = R.route_multi(i.ax, i.ay, i.bx, i.by, mode=i.mode, want=3)
+    if not routes:
         raise HTTPException(400, "no route found")
-    return _price_route(rt, i)
+    primary = _price_route(routes[0], i)
+    primary["alternatives"] = [_price_route(r, i) for r in routes[1:]]
+    return primary
 
 
 @app.get("/landmarks")
@@ -265,6 +267,34 @@ def geocode(q: str):
     return {**out, "cached": False, "instance": INSTANCE}
 
 
+@app.get("/search")
+def search(q: str):
+    """Autocomplete: address/place text -> up to 5 Edmonton matches. Cached."""
+    q = q.strip()
+    if len(q) < 3:
+        return {"results": [], "instance": INSTANCE}
+    key = f"se:{q.lower()}"
+    hit = cache_get(key)
+    if hit:
+        return {**hit, "cached": True, "instance": INSTANCE}
+    query = q if "edmonton" in q.lower() else f"{q}, Edmonton, Alberta, Canada"
+    url = "https://nominatim.openstreetmap.org/search?" + urllib.parse.urlencode(
+        {"q": query, "format": "jsonv2", "limit": 5, "addressdetails": 1, "countrycodes": "ca"})
+    req = urllib.request.Request(url, headers={"User-Agent": "RideIQ/1.0 (student project)"})
+    try:
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except Exception:
+        return {"results": [], "instance": INSTANCE}
+    results = [{"lat": float(t["lat"]), "lon": float(t["lon"]),
+               "display_name": t.get("display_name", ""),
+               "short": _short_address(t.get("address", {}), t.get("display_name", ""))}
+              for t in data]
+    out = {"results": results}
+    cache_set(key, out)
+    return {**out, "cached": False, "instance": INSTANCE}
+
+
 @app.post("/route-latlon")
 def route_latlon(i: RouteLatLonIn):
     """Route between two real-world points (landmarks). Requires a real OSM city loaded."""
@@ -272,10 +302,12 @@ def route_latlon(i: RouteLatLonIn):
     if not R.has_latlon():
         raise HTTPException(400, "Landmark routing needs the real city map. "
                                  "Run build_city_graph.py to create city_graph.json, then restart.")
-    rt = R.route_latlon(i.lat1, i.lon1, i.lat2, i.lon2, mode=i.mode)
-    if rt is None:
+    routes = R.route_latlon_multi(i.lat1, i.lon1, i.lat2, i.lon2, mode=i.mode, want=3)
+    if not routes:
         raise HTTPException(400, "no route found")
-    return _price_route(rt, i)
+    primary = _price_route(routes[0], i)
+    primary["alternatives"] = [_price_route(r, i) for r in routes[1:]]
+    return primary
 
 
 @app.post("/quote")

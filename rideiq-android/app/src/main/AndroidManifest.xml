@@ -12,12 +12,12 @@
         android:label="RideIQ"
         android:theme="@style/Theme.Material3.DayNight"
         android:usesCleartextTraffic="true">
-        <activity android:name=".MainActivity" android:exported="true">
+        <activity android:name=".RouteMapActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <activity android:name=".RouteMapActivity" android:exported="false" />
+        <activity android:name=".MainActivity" android:exported="false" android:label="Insights" />
     </application>
 </manifest>

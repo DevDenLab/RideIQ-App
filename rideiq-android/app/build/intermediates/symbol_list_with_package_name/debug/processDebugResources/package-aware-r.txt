@@ -3167,6 +3167,7 @@ id design_menu_item_action_area
 id design_menu_item_action_area_stub
 id design_menu_item_text
 id design_navigation_view
+id destField
 id dialog_button
 id dimensions
 id direct
@@ -3218,6 +3219,7 @@ id fragment_container_view_tag
 id fullscreen_header
 id ghost_view
 id ghost_view_holder
+id goBtn
 id gone
 id graph
 id graph_wrap
@@ -3284,6 +3286,7 @@ id matrix
 id message
 id middle
 id mini
+id modeBtn
 id month_grid
 id month_navigation_bar
 id month_navigation_fragment_toggle
@@ -3434,6 +3437,7 @@ id src_over
 id standard
 id start
 id startBtn
+id startField
 id startHorizontal
 id startToEnd
 id startVertical
@@ -3774,6 +3778,7 @@ string character_counter_pattern
 string clear_text_end_icon_content_description
 string compass
 string cyclemap
+string dest_hint
 string driver_shift
 string dropoff_hint
 string error_a11y_label
@@ -3849,6 +3854,8 @@ string material_timepicker_minute
 string material_timepicker_pm
 string material_timepicker_select_time
 string material_timepicker_text_input_mode_description
+string mode_drive
+string mode_walk
 string mtrl_badge_numberless_content_description
 string mtrl_checkbox_button_icon_path_checked
 string mtrl_checkbox_button_icon_path_group_name
@@ -3928,6 +3935,7 @@ string raining
 string request_ride
 string reset_map
 string roads_nl
+string route_btn
 string samples
 string search_menu_title
 string searchbar_scrolling_view_behavior
@@ -3941,6 +3949,7 @@ string set_mode_show_me
 string side_sheet_accessibility_pane_title
 string side_sheet_behavior
 string snapshot
+string start_hint
 string start_trip
 string states
 string status_bar_notification_info_overflow

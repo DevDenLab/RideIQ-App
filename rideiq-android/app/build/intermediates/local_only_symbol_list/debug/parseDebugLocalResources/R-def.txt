@@ -2,13 +2,16 @@ R_DEF: Internal format may change without notice
 local
 id analyticsText
 id causesBtn
+id destField
 id distance
 id driverBtn
 id dropoffText
+id goBtn
 id hour
 id info
 id map
 id mapBtn
+id modeBtn
 id myLocBtn
 id navBanner
 id pickupText
@@ -22,6 +25,7 @@ id resetBtn
 id satBtn
 id segBtn
 id startBtn
+id startField
 id surge
 id surgeBtn
 id traffic
@@ -29,6 +33,7 @@ layout activity_main
 layout activity_route_map
 string app_name
 string causes
+string dest_hint
 string driver_shift
 string dropoff_hint
 string get_quote
@@ -39,6 +44,8 @@ string hint_surge
 string hint_traffic
 string location_needed
 string map_hint
+string mode_drive
+string mode_walk
 string my_location
 string open_map
 string ops_analytics
@@ -48,7 +55,9 @@ string plot_desc
 string raining
 string request_ride
 string reset_map
+string route_btn
 string segments
+string start_hint
 string start_trip
 string stop_trip
 string surge_zones

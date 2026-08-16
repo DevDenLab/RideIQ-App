@@ -188,4 +188,9 @@ jobs:
               echo "Old color removed."
             fi
 
+            # Reclaim disk: drop images + build cache no longer used by a running container.
+            # (Never prunes volumes, so the SQLite data survives.)
+            docker image prune -af || true
+            docker builder prune -af || true
+
             echo "Deployed $REF with zero downtime (active color: $NEW)."

@@ -47,4 +47,8 @@ public interface ApiService {
     // Address / place text -> coordinates (for typing a start / destination).
     @GET("geocode")
     Call<ApiModels.ReverseGeocodeResponse> geocode(@Query("q") String q);
+
+    // Autocomplete: up to 5 matching places for a partial query.
+    @GET("search")
+    Call<ApiModels.SearchResponse> search(@Query("q") String q);
 }

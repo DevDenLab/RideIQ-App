@@ -89,6 +89,11 @@ public class ApiModels {
         public double lon;
     }
 
+    // ---- autocomplete search (text -> list of matches) ----
+    public static class SearchResponse {
+        public java.util.List<ReverseGeocodeResponse> results;
+    }
+
     public static class RouteLatLonRequest {
         public double lat1, lon1, lat2, lon2;
         public int hour, weather;

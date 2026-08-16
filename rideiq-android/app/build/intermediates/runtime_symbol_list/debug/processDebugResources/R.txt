@@ -3357,6 +3357,8 @@ int id open_search_view_search_prefix 0x7f08013c
 int id open_search_view_status_bar_spacer 0x7f08013d
 int id open_search_view_toolbar 0x7f08013e
 int id open_search_view_toolbar_container 0x7f08013f
+int id optionsRow 0x7f0801eb
+int id optionsScroll 0x7f0801ec
 int id outline 0x7f080140
 int id outward 0x7f080141
 int id packed 0x7f080142

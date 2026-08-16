@@ -22,6 +22,8 @@ id navBanner
 id nav_insights
 id nav_map
 id nav_profile
+id optionsRow
+id optionsScroll
 id pickupText
 id plotView
 id progress

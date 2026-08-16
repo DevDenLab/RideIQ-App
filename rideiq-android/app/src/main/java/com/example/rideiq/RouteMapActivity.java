@@ -15,18 +15,24 @@ import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.preference.PreferenceManager;
 import android.speech.tts.TextToSpeech;
 import android.speech.tts.Voice;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.InputMethodManager;
+import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
+import android.widget.ListView;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -118,6 +124,15 @@ public class RouteMapActivity extends AppCompatActivity {
     private int selectedOption = 0;
     private String lastRouteLabel = "Route";
 
+    // address autocomplete
+    private ListView suggestionsList;
+    private ArrayAdapter<String> suggestAdapter;
+    private final List<ApiModels.ReverseGeocodeResponse> suggestions = new ArrayList<>();
+    private final Handler searchHandler = new Handler(Looper.getMainLooper());
+    private Runnable searchRunnable;
+    private EditText activeField;
+    private boolean suppressAutocomplete = false;
+
     // navigation state
     private LocationManager lm;
     private TextToSpeech tts;
@@ -148,6 +163,12 @@ public class RouteMapActivity extends AppCompatActivity {
         destField = findViewById(R.id.destField);
         optionsScroll = findViewById(R.id.optionsScroll);
         optionsRow = findViewById(R.id.optionsRow);
+        suggestionsList = findViewById(R.id.suggestionsList);
+        suggestAdapter = new ArrayAdapter<>(this, android.R.layout.simple_list_item_1, new ArrayList<>());
+        suggestionsList.setAdapter(suggestAdapter);
+        suggestionsList.setOnItemClickListener((parent, view, position, id) -> onSuggestionPicked(position));
+        attachAutocomplete(startField);
+        attachAutocomplete(destField);
 
         map = findViewById(R.id.map);
         map.setTileSource(STREET);
@@ -218,6 +239,7 @@ public class RouteMapActivity extends AppCompatActivity {
     private void toggleMode() {
         travelMode = travelMode.equals("drive") ? "walk" : "drive";
         modeBtn.setText(travelMode.equals("walk") ? R.string.mode_walk : R.string.mode_drive);
+        updateLocationMarker();   // swap car <-> person icon
         if (pickupMarker != null && dropoffMarker != null) routeFromMarkers("Route");  // re-route in new mode
     }
 
@@ -225,7 +247,31 @@ public class RouteMapActivity extends AppCompatActivity {
     private void setupMyLocation() {
         myLocation = new MyLocationNewOverlay(new GpsMyLocationProvider(this), map);
         map.getOverlays().add(myLocation);
+        updateLocationMarker();
         if (hasLocationPermission()) myLocation.enableMyLocation();
+    }
+
+    /** Show a car (driving) or a person (walking) as the "you are here" marker, not a triangle. */
+    private void updateLocationMarker() {
+        if (myLocation == null) return;
+        boolean walk = "walk".equals(travelMode);
+        Bitmap bmp = vectorToBitmap(walk ? R.drawable.ic_marker_person : R.drawable.ic_marker_car,
+                walk ? Color.parseColor("#2E7D32") : Color.parseColor("#1E6FEB"));
+        if (bmp != null) {
+            myLocation.setDirectionArrow(bmp, bmp);   // sets both the stationary and moving icons
+        }
+    }
+
+    private Bitmap vectorToBitmap(int resId, int color) {
+        Drawable d = ContextCompat.getDrawable(this, resId);
+        if (d == null) return null;
+        int size = (int) (40 * getResources().getDisplayMetrics().density);
+        Bitmap bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+        Canvas cv = new Canvas(bmp);
+        d.setBounds(0, 0, size, size);
+        d.setTint(color);
+        d.draw(cv);
+        return bmp;
     }
 
     private boolean hasLocationPermission() {
@@ -694,8 +740,72 @@ public class RouteMapActivity extends AppCompatActivity {
     /** Fill the Start / Destination text box to match a resolved pin address (two-way sync). */
     private void syncField(String label, String addr) {
         if (addr == null || addr.isEmpty()) return;
+        suppressAutocomplete = true;   // don't let the programmatic setText trigger a search
         if ("Pickup".equals(label) && startField != null) startField.setText(addr);
         else if ("Drop-off".equals(label) && destField != null) destField.setText(addr);
+        suppressAutocomplete = false;
+    }
+
+    // ───────────────────────── address autocomplete ─────────────────────────
+    private void attachAutocomplete(final EditText field) {
+        field.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) { }
+            @Override public void onTextChanged(CharSequence s, int a, int b, int c) { }
+            @Override public void afterTextChanged(Editable e) {
+                if (suppressAutocomplete) return;
+                activeField = field;
+                String q = e.toString().trim();
+                if (searchRunnable != null) searchHandler.removeCallbacks(searchRunnable);
+                if (q.length() < 3) { hideSuggestions(); return; }
+                searchRunnable = () -> runSearch(q);
+                searchHandler.postDelayed(searchRunnable, 300);   // debounce keystrokes
+            }
+        });
+    }
+
+    private void runSearch(final String q) {
+        ApiClient.get().search(q).enqueue(new Callback<ApiModels.SearchResponse>() {
+            @Override public void onResponse(@NonNull Call<ApiModels.SearchResponse> c,
+                                             @NonNull Response<ApiModels.SearchResponse> r) {
+                if (!r.isSuccessful() || r.body() == null || r.body().results == null) { hideSuggestions(); return; }
+                suggestions.clear();
+                List<String> labels = new ArrayList<>();
+                for (ApiModels.ReverseGeocodeResponse res : r.body().results) {
+                    suggestions.add(res);
+                    labels.add(res.shortLabel != null && !res.shortLabel.isEmpty() ? res.shortLabel : res.displayName);
+                }
+                if (suggestions.isEmpty()) { hideSuggestions(); return; }
+                suggestAdapter.clear();
+                suggestAdapter.addAll(labels);
+                suggestAdapter.notifyDataSetChanged();
+                suggestionsList.setVisibility(View.VISIBLE);
+            }
+            @Override public void onFailure(@NonNull Call<ApiModels.SearchResponse> c, @NonNull Throwable t) {
+                hideSuggestions();
+            }
+        });
+    }
+
+    private void onSuggestionPicked(int position) {
+        if (position < 0 || position >= suggestions.size()) return;
+        ApiModels.ReverseGeocodeResponse res = suggestions.get(position);
+        String label = (res.shortLabel != null && !res.shortLabel.isEmpty()) ? res.shortLabel : res.displayName;
+        GeoPoint gp = new GeoPoint(res.lat, res.lon);
+        boolean isStart = (activeField == startField);
+        suppressAutocomplete = true;
+        (isStart ? startField : destField).setText(label);
+        suppressAutocomplete = false;
+        hideSuggestions();
+        hideKeyboard();
+        if (isStart) setPickup(gp, label); else setDropoff(gp, label);
+        if (pickupMarker == null || dropoffMarker == null) {
+            map.getController().animateTo(gp);
+            map.getController().setZoom(15.0);
+        }
+    }
+
+    private void hideSuggestions() {
+        if (suggestionsList != null) suggestionsList.setVisibility(View.GONE);
     }
 
 

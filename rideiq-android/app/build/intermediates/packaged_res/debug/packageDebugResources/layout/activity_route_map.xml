@@ -78,6 +78,20 @@
         android:layout_marginBottom="6dp"
         android:visibility="gone" />
 
+    <HorizontalScrollView
+        android:id="@+id/optionsScroll"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:scrollbars="none"
+        android:layout_marginBottom="6dp"
+        android:visibility="gone">
+        <LinearLayout
+            android:id="@+id/optionsRow"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal" />
+    </HorizontalScrollView>
+
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

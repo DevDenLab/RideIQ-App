@@ -3358,6 +3358,8 @@ id open_search_view_search_prefix
 id open_search_view_status_bar_spacer
 id open_search_view_toolbar
 id open_search_view_toolbar_container
+id optionsRow
+id optionsScroll
 id outline
 id outward
 id packed

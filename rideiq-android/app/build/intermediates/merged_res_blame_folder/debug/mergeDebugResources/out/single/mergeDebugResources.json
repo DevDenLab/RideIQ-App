@@ -1,19 +1,7 @@
 [
     {
-        "merged": "com.example.rideiq.app-debug-32:/layout_activity_main.xml.flat",
-        "source": "com.example.rideiq.app-main-34:/layout/activity_main.xml"
-    },
-    {
-        "merged": "com.example.rideiq.app-debug-32:/drawable_ic_nav_insights.xml.flat",
-        "source": "com.example.rideiq.app-main-34:/drawable/ic_nav_insights.xml"
-    },
-    {
-        "merged": "com.example.rideiq.app-debug-32:/drawable_ic_nav_profile.xml.flat",
-        "source": "com.example.rideiq.app-main-34:/drawable/ic_nav_profile.xml"
-    },
-    {
-        "merged": "com.example.rideiq.app-debug-32:/menu_bottom_nav.xml.flat",
-        "source": "com.example.rideiq.app-main-34:/menu/bottom_nav.xml"
+        "merged": "C:\\Users\\tatva\\.gradle\\daemon\\9.3.0\\com.example.rideiq.app-debug-32:\\drawable_ic_nav_map.xml.flat",
+        "source": "C:\\Users\\tatva\\.gradle\\daemon\\9.3.0\\com.example.rideiq.app-main-34:\\drawable\\ic_nav_map.xml"
     },
     {
         "merged": "C:\\Users\\tatva\\.gradle\\daemon\\9.3.0\\com.example.rideiq.app-debug-32:\\layout_activity_route_map.xml.flat",
@@ -28,15 +16,23 @@
         "source": "com.example.rideiq.app-main-34:/layout/activity_route_map.xml"
     },
     {
-        "merged": "com.example.rideiq.app-debug-32:/layout_activity_profile.xml.flat",
-        "source": "com.example.rideiq.app-main-34:/layout/activity_profile.xml"
+        "merged": "C:\\Users\\tatva\\.gradle\\daemon\\9.3.0\\com.example.rideiq.app-debug-32:\\menu_bottom_nav.xml.flat",
+        "source": "C:\\Users\\tatva\\.gradle\\daemon\\9.3.0\\com.example.rideiq.app-main-34:\\menu\\bottom_nav.xml"
     },
     {
         "merged": "C:\\Users\\tatva\\.gradle\\daemon\\9.3.0\\com.example.rideiq.app-debug-32:\\layout_activity_main.xml.flat",
         "source": "C:\\Users\\tatva\\.gradle\\daemon\\9.3.0\\com.example.rideiq.app-main-34:\\layout\\activity_main.xml"
     },
     {
-        "merged": "com.example.rideiq.app-debug-32:/drawable_ic_nav_map.xml.flat",
-        "source": "com.example.rideiq.app-main-34:/drawable/ic_nav_map.xml"
+        "merged": "C:\\Users\\tatva\\.gradle\\daemon\\9.3.0\\com.example.rideiq.app-debug-32:\\drawable_ic_nav_insights.xml.flat",
+        "source": "C:\\Users\\tatva\\.gradle\\daemon\\9.3.0\\com.example.rideiq.app-main-34:\\drawable\\ic_nav_insights.xml"
+    },
+    {
+        "merged": "C:\\Users\\tatva\\.gradle\\daemon\\9.3.0\\com.example.rideiq.app-debug-32:\\drawable_ic_nav_profile.xml.flat",
+        "source": "C:\\Users\\tatva\\.gradle\\daemon\\9.3.0\\com.example.rideiq.app-main-34:\\drawable\\ic_nav_profile.xml"
+    },
+    {
+        "merged": "C:\\Users\\tatva\\.gradle\\daemon\\9.3.0\\com.example.rideiq.app-debug-32:\\layout_activity_profile.xml.flat",
+        "source": "C:\\Users\\tatva\\.gradle\\daemon\\9.3.0\\com.example.rideiq.app-main-34:\\layout\\activity_profile.xml"
     }
 ]

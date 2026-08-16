@@ -22,6 +22,8 @@
     <string name="request_ride">Request a ride</string>
     <string name="reset_map">Reset</string>
     <string name="segments">Rider segments</string>
+    <string name="start_trip">Start trip</string>
+    <string name="stop_trip">Stop trip</string>
     <string name="surge_zones">Surge zones</string>
     <string name="tagline">Ride-hailing brain — 15 ML models behind every feature</string>
     <string name="toggle_satellite">Satellite / street</string>

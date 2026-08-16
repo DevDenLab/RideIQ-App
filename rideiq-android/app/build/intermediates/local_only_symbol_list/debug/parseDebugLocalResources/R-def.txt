@@ -10,6 +10,7 @@ id info
 id map
 id mapBtn
 id myLocBtn
+id navBanner
 id pickupText
 id plotView
 id progress
@@ -20,6 +21,7 @@ id rating
 id resetBtn
 id satBtn
 id segBtn
+id startBtn
 id surge
 id surgeBtn
 id traffic
@@ -47,6 +49,8 @@ string raining
 string request_ride
 string reset_map
 string segments
+string start_trip
+string stop_trip
 string surge_zones
 string tagline
 string toggle_satellite

@@ -101,11 +101,27 @@ class RouteIn(BaseModel):
     # origin (ax, ay) and destination (bx, by) as city coords in 0..1
     ax: float = 0.1; ay: float = 0.1; bx: float = 0.9; by: float = 0.9
     hour: int = 8; weather: int = 0; traffic: float = 0.5; surge: float = 1.0
+    mode: str = "drive"          # "drive" or "walk"
 
 
 class RouteLatLonIn(BaseModel):
     lat1: float; lon1: float; lat2: float; lon2: float
     hour: int = 8; weather: int = 0; traffic: float = 0.5; surge: float = 1.0
+    mode: str = "drive"          # "drive" or "walk"
+
+
+WALK_SPEED_KMH = 4.8             # average walking pace, for walk-mode ETA
+
+
+def _price_route(rt, i):
+    """Attach ETA + fare to a route result, mode-aware. Walking has an ETA but no fare."""
+    if rt.get("mode") == "walk":
+        eta_min = round(rt["distance_km"] / WALK_SPEED_KMH * 60.0, 1)
+        return {**rt, "eta_min": eta_min, "fare_usd": 0.0, "instance": INSTANCE}
+    eta = M.predict_eta(rt["distance_km"], i.hour, i.weather, i.traffic)
+    fare = M.estimate_fare(rt["distance_km"], eta["ensemble_min"], i.surge)
+    return {**rt, "eta_min": eta["ensemble_min"], "fare_usd": fare["random_forest"],
+            "instance": INSTANCE}
 
 
 # Preset Edmonton landmarks (real coordinates). Used once a real OSM city is loaded.
@@ -169,13 +185,10 @@ def graph():
 def route(i: RouteIn):
     """Compute a route with A*, then price it: distance → ETA (ML) → fare (ML)."""
     METRICS["requests"] += 1
-    rt = R.route(i.ax, i.ay, i.bx, i.by)
+    rt = R.route(i.ax, i.ay, i.bx, i.by, mode=i.mode)
     if rt is None:
         raise HTTPException(400, "no route found")
-    eta = M.predict_eta(rt["distance_km"], i.hour, i.weather, i.traffic)
-    fare = M.estimate_fare(rt["distance_km"], eta["ensemble_min"], i.surge)
-    return {**rt, "eta_min": eta["ensemble_min"], "fare_usd": fare["random_forest"],
-            "instance": INSTANCE}
+    return _price_route(rt, i)
 
 
 @app.get("/landmarks")
@@ -213,6 +226,45 @@ def reverse_geocode(lat: float, lon: float):
     return {**out, "cached": False, "instance": INSTANCE}
 
 
+def _short_address(a, fallback):
+    road = a.get("road") or a.get("pedestrian") or a.get("footway") or ""
+    num = a.get("house_number", "")
+    area = (a.get("neighbourhood") or a.get("suburb") or a.get("city_district")
+            or a.get("city") or a.get("town") or "")
+    line1 = (f"{num} {road}").strip()
+    return ", ".join([p for p in [line1, area] if p]) or (fallback[:60] if fallback else "")
+
+
+@app.get("/geocode")
+def geocode(q: str):
+    """Address/place text -> coordinates, via free OSM Nominatim. Biased to Edmonton so
+    results land inside the routable city graph. Cached."""
+    q = q.strip()
+    if not q:
+        raise HTTPException(400, "empty query")
+    key = f"gc:{q.lower()}"
+    hit = cache_get(key)
+    if hit:
+        return {**hit, "cached": True, "instance": INSTANCE}
+    query = q if "edmonton" in q.lower() else f"{q}, Edmonton, Alberta, Canada"
+    url = "https://nominatim.openstreetmap.org/search?" + urllib.parse.urlencode(
+        {"q": query, "format": "jsonv2", "limit": 1, "addressdetails": 1, "countrycodes": "ca"})
+    req = urllib.request.Request(url, headers={"User-Agent": "RideIQ/1.0 (student project)"})
+    try:
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except Exception as e:
+        raise HTTPException(502, f"geocoder unavailable: {e}")
+    if not data:
+        raise HTTPException(404, "address not found in Edmonton")
+    top = data[0]
+    lat, lon = float(top["lat"]), float(top["lon"])
+    short = _short_address(top.get("address", {}), top.get("display_name", ""))
+    out = {"display_name": top.get("display_name", ""), "short": short, "lat": lat, "lon": lon}
+    cache_set(key, out)
+    return {**out, "cached": False, "instance": INSTANCE}
+
+
 @app.post("/route-latlon")
 def route_latlon(i: RouteLatLonIn):
     """Route between two real-world points (landmarks). Requires a real OSM city loaded."""
@@ -220,13 +272,10 @@ def route_latlon(i: RouteLatLonIn):
     if not R.has_latlon():
         raise HTTPException(400, "Landmark routing needs the real city map. "
                                  "Run build_city_graph.py to create city_graph.json, then restart.")
-    rt = R.route_latlon(i.lat1, i.lon1, i.lat2, i.lon2)
+    rt = R.route_latlon(i.lat1, i.lon1, i.lat2, i.lon2, mode=i.mode)
     if rt is None:
         raise HTTPException(400, "no route found")
-    eta = M.predict_eta(rt["distance_km"], i.hour, i.weather, i.traffic)
-    fare = M.estimate_fare(rt["distance_km"], eta["ensemble_min"], i.surge)
-    return {**rt, "eta_min": eta["ensemble_min"], "fare_usd": fare["random_forest"],
-            "instance": INSTANCE}
+    return _price_route(rt, i)
 
 
 @app.post("/quote")

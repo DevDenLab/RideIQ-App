@@ -5,6 +5,7 @@ import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.DashPathEffect;
 import android.graphics.Paint;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
@@ -15,7 +16,9 @@ import android.os.Bundle;
 import android.preference.PreferenceManager;
 import android.speech.tts.TextToSpeech;
 import android.view.View;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -40,6 +43,7 @@ import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider;
 import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -86,13 +90,16 @@ public class RouteMapActivity extends AppCompatActivity {
 
     private MapView map;
     private TextView info, pickupText, dropoffText, navBanner;
+    private EditText startField, destField;
     private ProgressBar progress;
     private Button startBtn;
 
     private Marker pickupMarker, dropoffMarker;
-    private Polyline routeLine;
+    private Polyline routeLine, pickupConnector, dropoffConnector;
     private MyLocationNewOverlay myLocation;
     private boolean satellite = false;
+    private String travelMode = "drive";     // "drive" or "walk"
+    private Button modeBtn;
 
     // navigation state
     private LocationManager lm;
@@ -120,6 +127,8 @@ public class RouteMapActivity extends AppCompatActivity {
         dropoffText = findViewById(R.id.dropoffText);
         navBanner = findViewById(R.id.navBanner);
         startBtn = findViewById(R.id.startBtn);
+        startField = findViewById(R.id.startField);
+        destField = findViewById(R.id.destField);
 
         map = findViewById(R.id.map);
         map.setTileSource(STREET);
@@ -136,6 +145,9 @@ public class RouteMapActivity extends AppCompatActivity {
         ((Button) findViewById(R.id.myLocBtn)).setOnClickListener(v -> onMyLocationTapped());
         ((Button) findViewById(R.id.satBtn)).setOnClickListener(v -> toggleSatellite());
         startBtn.setOnClickListener(v -> { if (navigating) stopTrip(); else startTrip(); });
+        ((Button) findViewById(R.id.goBtn)).setOnClickListener(v -> onGoTapped());
+        modeBtn = findViewById(R.id.modeBtn);
+        modeBtn.setOnClickListener(v -> toggleMode());
 
         lm = (LocationManager) getSystemService(LOCATION_SERVICE);
         tts = new TextToSpeech(this, status -> {
@@ -175,6 +187,12 @@ public class RouteMapActivity extends AppCompatActivity {
         satellite = !satellite;
         map.setTileSource(satellite ? ESRI_SAT : STREET);
         map.invalidate();
+    }
+
+    private void toggleMode() {
+        travelMode = travelMode.equals("drive") ? "walk" : "drive";
+        modeBtn.setText(travelMode.equals("walk") ? R.string.mode_walk : R.string.mode_drive);
+        if (pickupMarker != null && dropoffMarker != null) routeFromMarkers("Route");  // re-route in new mode
     }
 
     // ───────────────────────── my location ─────────────────────────
@@ -234,28 +252,82 @@ public class RouteMapActivity extends AppCompatActivity {
         else setDropoff(p);
     }
 
-    private void setPickup(GeoPoint p) {
+    private void setPickup(GeoPoint p) { setPickup(p, null); }
+
+    /** knownAddr != null skips the reverse-geocode lookup (we already know the address). */
+    private void setPickup(GeoPoint p, String knownAddr) {
         if (pickupMarker == null) {
             pickupMarker = makeMarker(p, "Pickup", GREEN);
             map.getOverlays().add(pickupMarker);
         } else {
             pickupMarker.setPosition(p);
         }
-        geocode(p, pickupText, "Pickup");
+        if (knownAddr != null && !knownAddr.isEmpty()) pickupText.setText("Pickup: " + knownAddr);
+        else geocode(p, pickupText, "Pickup");
         if (dropoffMarker != null) routeFromMarkers("Route");
         map.invalidate();
     }
 
-    private void setDropoff(GeoPoint p) {
+    private void setDropoff(GeoPoint p) { setDropoff(p, null); }
+
+    private void setDropoff(GeoPoint p, String knownAddr) {
         if (dropoffMarker == null) {
             dropoffMarker = makeMarker(p, "Drop-off", RED);
             map.getOverlays().add(dropoffMarker);
         } else {
             dropoffMarker.setPosition(p);
         }
-        geocode(p, dropoffText, "Drop-off");
+        if (knownAddr != null && !knownAddr.isEmpty()) dropoffText.setText("Drop-off: " + knownAddr);
+        else geocode(p, dropoffText, "Drop-off");
         if (pickupMarker != null) routeFromMarkers("Route");
         map.invalidate();
+    }
+
+    // ───────────────────────── manual address entry (forward geocoding) ─────────────────────────
+    private void onGoTapped() {
+        String sTxt = startField.getText().toString().trim();
+        String dTxt = destField.getText().toString().trim();
+        if (sTxt.isEmpty() && dTxt.isEmpty()) {
+            Toast.makeText(this, "Type a start and/or destination address.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        hideKeyboard();
+        if (!sTxt.isEmpty()) geocodeToPin(sTxt, true);
+        if (!dTxt.isEmpty()) geocodeToPin(dTxt, false);
+    }
+
+    /** Look up a typed address and drop the matching pin (isStart -> pickup, else drop-off). */
+    private void geocodeToPin(final String query, final boolean isStart) {
+        progress.setVisibility(View.VISIBLE);
+        info.setText("Finding \"" + query + "\"…");
+        ApiClient.get().geocode(query).enqueue(new Callback<ApiModels.ReverseGeocodeResponse>() {
+            @Override public void onResponse(@NonNull Call<ApiModels.ReverseGeocodeResponse> c,
+                                             @NonNull Response<ApiModels.ReverseGeocodeResponse> r) {
+                progress.setVisibility(View.GONE);
+                if (!r.isSuccessful() || r.body() == null) {
+                    info.setText("Couldn't find \"" + query + "\" in Edmonton. Try a more specific address.");
+                    return;
+                }
+                ApiModels.ReverseGeocodeResponse b = r.body();
+                GeoPoint gp = new GeoPoint(b.lat, b.lon);
+                String label = (b.shortLabel != null && !b.shortLabel.isEmpty()) ? b.shortLabel : query;
+                boolean bothSetAfter;
+                if (isStart) { setPickup(gp, label); bothSetAfter = dropoffMarker != null; }
+                else { setDropoff(gp, label); bothSetAfter = pickupMarker != null; }
+                if (!bothSetAfter) { map.getController().animateTo(gp); map.getController().setZoom(15.0); }
+            }
+            @Override public void onFailure(@NonNull Call<ApiModels.ReverseGeocodeResponse> c,
+                                            @NonNull Throwable t) {
+                progress.setVisibility(View.GONE);
+                info.setText("Can't reach server for address lookup.");
+            }
+        });
+    }
+
+    private void hideKeyboard() {
+        InputMethodManager imm = getSystemService(InputMethodManager.class);
+        View f = getCurrentFocus();
+        if (imm != null && f != null) imm.hideSoftInputFromWindow(f.getWindowToken(), 0);
     }
 
     private Marker makeMarker(GeoPoint p, String title, int color) {
@@ -300,17 +372,13 @@ public class RouteMapActivity extends AppCompatActivity {
                     @Override public void onResponse(@NonNull Call<ApiModels.ReverseGeocodeResponse> c,
                                                      @NonNull Response<ApiModels.ReverseGeocodeResponse> r) {
                         String addr = (r.isSuccessful() && r.body() != null) ? r.body().shortLabel : null;
-                        target.setText(label + ": " + (addr != null && !addr.isEmpty() ? addr : coords(p)));
+                        target.setText(label + ": " + (addr != null && !addr.isEmpty() ? addr : "pinned location"));
                     }
                     @Override public void onFailure(@NonNull Call<ApiModels.ReverseGeocodeResponse> c,
                                                     @NonNull Throwable t) {
-                        target.setText(label + ": " + coords(p));
+                        target.setText(label + ": pinned location");
                     }
                 });
-    }
-
-    private String coords(GeoPoint p) {
-        return String.format(Locale.US, "%.5f, %.5f", p.getLatitude(), p.getLongitude());
     }
 
     // ───────────────────────── routing ─────────────────────────
@@ -321,6 +389,7 @@ public class RouteMapActivity extends AppCompatActivity {
         ApiModels.RouteLatLonRequest req = new ApiModels.RouteLatLonRequest(
                 a.getLatitude(), a.getLongitude(), b.getLatitude(), b.getLongitude(),
                 18, 0, 0.6, 1.2);
+        req.mode = travelMode;
         ApiClient.get().routeLatLon(req).enqueue(new Callback<ApiModels.RouteResponse>() {
             @Override public void onResponse(@NonNull Call<ApiModels.RouteResponse> c,
                                              @NonNull Response<ApiModels.RouteResponse> r) {
@@ -351,6 +420,15 @@ public class RouteMapActivity extends AppCompatActivity {
         routeLine.getOutlinePaint().setColor(Color.parseColor("#1E6FEB"));
         routeLine.getOutlinePaint().setStrokeWidth(12f);
         map.getOverlays().add(routeLine);
+
+        // Dashed connectors bridge the gap between the actual pins and where the route
+        // snapped to the nearest road/path node (so the line visibly reaches each pin).
+        removeConnectors();
+        if (pickupMarker != null)
+            pickupConnector = addConnector(pickupMarker.getPosition(), routePts.get(0));
+        if (dropoffMarker != null)
+            dropoffConnector = addConnector(routePts.get(routePts.size() - 1), dropoffMarker.getPosition());
+
         if (pickupMarker != null) { map.getOverlays().remove(pickupMarker); map.getOverlays().add(pickupMarker); }
         if (dropoffMarker != null) { map.getOverlays().remove(dropoffMarker); map.getOverlays().add(dropoffMarker); }
 
@@ -360,9 +438,15 @@ public class RouteMapActivity extends AppCompatActivity {
         if (navigating) { currentStep = 0; preAnnounced.clear(); offRouteCount = 0; }
 
         if (!navigating) {
-            info.setText(String.format(Locale.US,
-                    "%s\n%.1f km  ·  ETA %.0f min  ·  $%.2f  ·  %d turns\nTap “Start trip” for voice navigation.",
-                    label, b.distanceKm, b.etaMin, b.fareUsd, b.turns));
+            boolean walk = "walk".equals(b.mode);
+            String head = walk
+                    ? String.format(Locale.US, "%s\n%.1f km  ·  %.0f min walk  ·  %d turns", label, b.distanceKm, b.etaMin, b.turns)
+                    : String.format(Locale.US, "%s\n%.1f km  ·  ETA %.0f min  ·  $%.2f  ·  %d turns", label, b.distanceKm, b.etaMin, b.fareUsd, b.turns);
+            if (b.modeFallback)
+                head += "\n(Walking map not loaded yet — showing the driving route.)";
+            else
+                head += "\nTap “Start trip” for voice navigation.";
+            info.setText(head);
             map.post(() -> map.zoomToBoundingBox(BoundingBox.fromGeoPoints(routePts), true, 90));
         }
         map.invalidate();
@@ -477,9 +561,27 @@ public class RouteMapActivity extends AppCompatActivity {
         if (tts != null && ttsReady) tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "nav");
     }
 
+    /** A short dashed line bridging a pin to the nearest routable node (null if the gap is tiny). */
+    private Polyline addConnector(GeoPoint a, GeoPoint b) {
+        if (distMeters(a.getLatitude(), a.getLongitude(), b.getLatitude(), b.getLongitude()) < 10f) return null;
+        Polyline c = new Polyline();
+        c.setPoints(Arrays.asList(a, b));
+        c.getOutlinePaint().setColor(Color.parseColor("#1E6FEB"));
+        c.getOutlinePaint().setStrokeWidth(7f);
+        c.getOutlinePaint().setPathEffect(new DashPathEffect(new float[]{16f, 12f}, 0f));
+        map.getOverlays().add(c);
+        return c;
+    }
+
+    private void removeConnectors() {
+        if (pickupConnector != null) { map.getOverlays().remove(pickupConnector); pickupConnector = null; }
+        if (dropoffConnector != null) { map.getOverlays().remove(dropoffConnector); dropoffConnector = null; }
+    }
+
     private void resetMap() {
         if (navigating) stopTrip();
         if (routeLine != null) { map.getOverlays().remove(routeLine); routeLine = null; }
+        removeConnectors();
         if (dropoffMarker != null) { map.getOverlays().remove(dropoffMarker); dropoffMarker = null; }
         navSteps = new ArrayList<>();
         startBtn.setEnabled(false);

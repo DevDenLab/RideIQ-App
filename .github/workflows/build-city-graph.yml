@@ -20,6 +20,12 @@ on:
         description: "OSM place to build (e.g. 'Edmonton, Canada')"
         required: true
         default: "Edmonton, Canada"
+      mode:
+        description: "Transport graph to build"
+        required: true
+        default: "drive"
+        type: choice
+        options: [drive, walk, both]
 
 permissions:
   contents: write        # needs to commit the regenerated graph back
@@ -39,18 +45,27 @@ jobs:
       - name: Install osmnx (build-only dependency)
         run: pip install osmnx matplotlib
 
-      - name: Build the city graph
+      - name: Build the city graph(s)
         working-directory: rideiq-backend
-        run: python build_city_graph.py "${{ github.event.inputs.place }}"
+        run: |
+          MODE="${{ github.event.inputs.mode }}"
+          PLACE="${{ github.event.inputs.place }}"
+          if [ "$MODE" = "both" ]; then
+            python build_city_graph.py "$PLACE" drive
+            python build_city_graph.py "$PLACE" walk
+          else
+            python build_city_graph.py "$PLACE" "$MODE"
+          fi
 
-      - name: Commit the regenerated graph (triggers deploy-rideiq)
+      - name: Commit the regenerated graph(s) (triggers deploy-rideiq)
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add rideiq-backend/city_graph.json rideiq-backend/city_preview.png
+          git add rideiq-backend/city_graph.json rideiq-backend/city_preview.png \
+                  rideiq-backend/walk_graph.json rideiq-backend/walk_preview.png 2>/dev/null || true
           if git diff --cached --quiet; then
             echo "Graph unchanged — nothing to commit."
           else
-            git commit -m "chore: rebuild city graph for '${{ github.event.inputs.place }}' [auto]"
+            git commit -m "chore: rebuild ${{ github.event.inputs.mode }} graph for '${{ github.event.inputs.place }}' [auto]"
             git push
           fi

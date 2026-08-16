@@ -43,4 +43,8 @@ public interface ApiService {
     @GET("reverse-geocode")
     Call<ApiModels.ReverseGeocodeResponse> reverseGeocode(@Query("lat") double lat,
                                                           @Query("lon") double lon);
+
+    // Address / place text -> coordinates (for typing a start / destination).
+    @GET("geocode")
+    Call<ApiModels.ReverseGeocodeResponse> geocode(@Query("q") String q);
 }

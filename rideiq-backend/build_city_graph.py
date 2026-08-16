@@ -27,23 +27,37 @@ import matplotlib.pyplot as plt
 
 # Downtown Edmonton by default (lat, lon). Change or pass a place name as arg 1.
 DEFAULT_CENTER = (53.5444, -113.4909)
-OUT_JSON = "city_graph.json"
-OUT_PNG = "city_preview.png"
+
+# Output filenames per transport mode. routing.py loads these by name.
+OUTPUTS = {
+    "drive": ("city_graph.json", "city_preview.png"),
+    "walk":  ("walk_graph.json", "walk_preview.png"),
+}
 
 
-def download_graph(arg, radius_m):
+def download_graph(arg, radius_m, net_type):
+    kind = "walkable paths" if net_type == "walk" else "drivable roads"
     if arg and not arg.replace(".", "").replace("-", "").isdigit():
-        print(f"Downloading drivable roads for: {arg}")
-        return ox.graph_from_place(arg, network_type="drive"), arg.split(",")[0]
-    print(f"Downloading drivable roads around downtown Edmonton ({radius_m} m radius)")
-    G = ox.graph_from_point(DEFAULT_CENTER, dist=radius_m, network_type="drive")
+        print(f"Downloading {kind} for: {arg}")
+        return ox.graph_from_place(arg, network_type=net_type), arg.split(",")[0]
+    print(f"Downloading {kind} around downtown Edmonton ({radius_m} m radius)")
+    G = ox.graph_from_point(DEFAULT_CENTER, dist=radius_m, network_type=net_type)
     return G, "Edmonton (downtown)"
 
 
 def main():
-    arg = sys.argv[1] if len(sys.argv) > 1 else None
-    radius = int(sys.argv[2]) if len(sys.argv) > 2 else 4000
-    G, name = download_graph(arg, radius)
+    # Parse args in any order: a place string, an optional numeric radius, and a mode token.
+    args = sys.argv[1:]
+    mode = "drive"
+    for a in list(args):
+        if a.lower() in ("walk", "drive"):
+            mode = a.lower(); args.remove(a)
+    arg = next((a for a in args if not a.replace(".", "").replace("-", "").isdigit()), None)
+    radius = next((int(a) for a in args if a.replace(".", "").replace("-", "").isdigit()), 4000)
+    OUT_JSON, OUT_PNG = OUTPUTS[mode]
+    net_type = "walk" if mode == "walk" else "drive"
+    print(f"Mode: {mode}  ->  writes {OUT_JSON}")
+    G, name = download_graph(arg, radius, net_type)
 
     nodes = list(G.nodes)
     idx = {osmid: i for i, osmid in enumerate(nodes)}

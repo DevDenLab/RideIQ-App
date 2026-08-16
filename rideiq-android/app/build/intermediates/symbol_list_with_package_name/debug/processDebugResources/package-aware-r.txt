@@ -3316,6 +3316,7 @@ id mtrl_picker_title_text
 id mtrl_view_tag_bottom_padding
 id multiply
 id myLocBtn
+id navBanner
 id navigation_bar_item_active_indicator_view
 id navigation_bar_item_icon_container
 id navigation_bar_item_icon_view
@@ -3432,6 +3433,7 @@ id src_in
 id src_over
 id standard
 id start
+id startBtn
 id startHorizontal
 id startToEnd
 id startVertical
@@ -3939,8 +3941,10 @@ string set_mode_show_me
 string side_sheet_accessibility_pane_title
 string side_sheet_behavior
 string snapshot
+string start_trip
 string states
 string status_bar_notification_info_overflow
+string stop_trip
 string surge_zones
 string tagline
 string toggle_satellite

@@ -56,6 +56,8 @@ public class ApiModels {
         @SerializedName("fare_usd") public double fareUsd;
         public int turns;
         public java.util.List<Step> steps;   // turn-by-turn maneuvers for voice navigation
+        public String mode;                  // "drive" or "walk" (which graph served this)
+        @SerializedName("mode_fallback") public boolean modeFallback;  // true if walk fell back to drive
     }
 
     /** One turn-by-turn maneuver: where to act, what to do, and distance to it. */
@@ -90,6 +92,7 @@ public class ApiModels {
         public double lat1, lon1, lat2, lon2;
         public int hour, weather;
         public double traffic, surge;
+        public String mode = "drive";        // "drive" or "walk"
         public RouteLatLonRequest(double lat1, double lon1, double lat2, double lon2,
                                   int hour, int weather, double traffic, double surge) {
             this.lat1 = lat1; this.lon1 = lon1; this.lat2 = lat2; this.lon2 = lon2;

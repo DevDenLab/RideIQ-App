@@ -1,0 +1,110 @@
+{
+  "$comment": "High-level system design of RideIQ + a narration script for a 2-3 minute AI-generated explainer video. Feed 'architecture' to a diagram tool and 'video_script.full_narration' (or the per-scene text) to your AI video generator.",
+  "meta": {
+    "project": "RideIQ",
+    "one_liner": "A self-hosted ride-hailing and navigation app: an Android client, a FastAPI machine-learning backend, and a zero-downtime CI/CD pipeline on AWS.",
+    "no_paid_apis": "Maps, tiles, routing and geocoding all use free OpenStreetMap data - no Google Maps key.",
+    "version": "1.0"
+  },
+
+  "architecture": {
+    "layers": [
+      {
+        "id": "client",
+        "label": "Client (what the user touches)",
+        "placement": "leftmost - on the user's phone",
+        "components": [
+          {"name": "Android app (Java)", "does": "The whole UI. Map is the home screen.", "tech": "Java, osmdroid (free OSM map), Retrofit (HTTP)"},
+          {"name": "Map tab", "does": "Search or tap a start + destination, choose drive/walk, pick a route option, run live turn-by-turn navigation.", "tech": "osmdroid MapView, TextToSpeech, LocationManager (GPS)"},
+          {"name": "Insights tab", "does": "Shows the ML analytics (surge zones, rider segments, driver shift, cancellation causes) and a fare/ETA estimator.", "tech": "renders backend plot images"},
+          {"name": "Profile tab", "does": "Settings: voice, default mode, units, about.", "tech": "static settings"}
+        ]
+      },
+      {
+        "id": "cicd",
+        "label": "CI/CD pipeline (how code ships)",
+        "placement": "the automation layer - runs in the cloud on each push",
+        "components": [
+          {"name": "GitHub Actions (deploy-rideiq)", "does": "On push to main: builds the Docker image, pushes it to the registry, SSHes into the server and runs a blue-green swap.", "tech": "GitHub Actions, Docker Buildx"},
+          {"name": "Container registry (ghcr.io)", "does": "Stores every image, tagged by commit SHA - the unit that gets deployed and the basis for rollback.", "tech": "GitHub Container Registry"},
+          {"name": "build-city-graph workflow", "does": "One-click job that downloads Edmonton's roads/footpaths from OpenStreetMap and commits the routing graph.", "tech": "osmnx"}
+        ]
+      },
+      {
+        "id": "host",
+        "label": "AWS EC2 host (where it runs)",
+        "placement": "the cloud server with a fixed public IP",
+        "components": [
+          {"name": "nginx edge", "does": "The single public front door on port 80; reverse-proxies to whichever app color is live and performs the traffic switch.", "tech": "nginx"},
+          {"name": "rideiq-blue / rideiq-green", "does": "Two copies of the app container; only one serves traffic at a time, the other is the instant-rollback safety net.", "tech": "Docker containers"},
+          {"name": "Redis", "does": "Shared cache for repeated answers (analytics, geocoding) - kept fast under load.", "tech": "Redis"},
+          {"name": "SQLite (rideiq.db)", "does": "Logs every quote; on a mounted volume so it survives deploys. (Postgres is the planned upgrade for scale.)", "tech": "SQLite"},
+          {"name": "city_graph.json / walk_graph.json", "does": "The Edmonton road and footpath networks, baked into the image for offline routing.", "tech": "OSM-derived graph"}
+        ]
+      },
+      {
+        "id": "brain",
+        "label": "The backend brain (the intelligence)",
+        "placement": "inside the live app container",
+        "components": [
+          {"name": "FastAPI service", "does": "Exposes the API: /quote, /route, /route-latlon, /geocode, /reverse-geocode, /search, /health, /metrics, plus analytics endpoints.", "tech": "FastAPI, uvicorn"},
+          {"name": "A* routing engine", "does": "Finds the shortest path over the road/footpath graph; also computes up to 3 alternative routes.", "tech": "A* (Dijkstra + haversine heuristic)"},
+          {"name": "15 ML models", "does": "Power ETA, fare, cancellation risk, fraud, surge zones, rider segments, driver shift, and cancellation causes.", "tech": "scikit-learn, hmmlearn, pgmpy"}
+        ]
+      },
+      {
+        "id": "external",
+        "label": "External free services",
+        "placement": "called out to the internet",
+        "components": [
+          {"name": "OSM Nominatim", "does": "Geocoding: address <-> coordinates and autocomplete search.", "tech": "OpenStreetMap Nominatim"},
+          {"name": "OSM / CARTO / Esri tiles", "does": "The map imagery drawn in the app.", "tech": "free tile servers"}
+        ]
+      }
+    ],
+    "primary_request_path": "Phone -> Elastic public IP -> nginx (:80) -> live app container (:8000) -> A* routing + ML models (Redis cache checked first) -> response back to the phone.",
+    "deploy_path": "git push -> GitHub Actions builds image -> ghcr.io -> SSH to EC2 -> health-check new color -> nginx switches -> old color retired (rollback = redeploy an older SHA)."
+  },
+
+  "data_flows": [
+    {"name": "Get a quote", "steps": ["app POSTs /quote (distance, time, weather, traffic, surge)", "backend runs ETA -> fare -> cancellation-risk models", "logs to SQLite", "returns ETA, fare, risk"]},
+    {"name": "Plan a route", "steps": ["app POSTs /route-latlon (start, dest, mode)", "A* finds the path over the drive or walk graph", "computes 2 alternatives by penalizing the first route's roads", "prices each (walk = time only, no fare)", "returns primary + alternatives with turn-by-turn steps"]},
+    {"name": "Live navigation", "steps": ["user taps Start trip", "phone streams GPS via LocationManager", "app matches position to the route steps", "speaks each turn (male voice) and follows the map", "announces arrival within ~30 m of the destination, reroutes if off-course"]},
+    {"name": "Search an address", "steps": ["user types in the start/destination box", "app calls /search (debounced)", "backend queries Nominatim, biased to Edmonton, cached", "returns up to 5 suggestions -> tap fills the field and drops the pin"]}
+  ],
+
+  "algorithms": {
+    "routing": {"name": "A* shortest path", "how": "The city is a graph: intersections are nodes, streets are edges weighted by length. A* explores the graph guided by a straight-line (haversine) distance-to-goal heuristic, so it finds the shortest route fast. Alternatives come from re-running A* with the first route's edges penalized."},
+    "eta": {"name": "ETA prediction", "how": "Three regressors (Linear Regression, Random Forest, Neural Network) predict trip duration from distance, hour, weather and traffic; their average is the ETA."},
+    "fare": {"name": "Fare estimation", "how": "Random Forest predicts the fare from distance, duration and surge; KNN surfaces comparable past trips for transparency."},
+    "cancellation_risk": {"name": "Cancellation risk", "how": "Logistic Regression, Decision Tree and AdaBoost each estimate the probability the rider cancels; the consensus is flagged high or low."},
+    "surge_zones": {"name": "Demand / surge zones", "how": "K-Means clusters demand points into hotspots; Gaussian Mixture and hierarchical clustering validate the zones."},
+    "other": {"name": "More features", "how": "SVM + Naive Bayes for payment fraud, PCA + LDA for rider segments, a Hidden Markov Model for driver shift states, and a Bayesian Network for cancellation causes."}
+  },
+
+  "how_to_use": [
+    "Open the app - it starts on the map at your location.",
+    "Type a destination (autocomplete suggests matches) or tap the map to drop a pin.",
+    "Choose Drive or Walk with the segmented pill (route draws solid blue for driving, dashed green for walking).",
+    "Compare up to 3 route cards - the recommended one is highlighted, slower ones show +minutes and arrival time.",
+    "Tap Start trip for live, spoken turn-by-turn navigation; the app follows your GPS and announces arrival.",
+    "Open Insights for the ML analytics, or Profile for settings."
+  ],
+
+  "video_script": {
+    "target_length_seconds": 150,
+    "tone": "clear, confident, friendly - explaining to students",
+    "voice": "neutral narrator, moderate pace (~150 words/min)",
+    "scenes": [
+      {"t": "0:00-0:12", "visual": "App logo, then the map home screen", "narration": "This is RideIQ - a ride-hailing and navigation app built completely from scratch. No Google Maps, no paid APIs - just open data and machine learning, running on our own cloud server."},
+      {"t": "0:12-0:32", "visual": "The full architecture diagram, four zones highlighted left to right", "narration": "The system has four parts. On the left, the Android app - what you touch. Next, the CI/CD pipeline that ships our code automatically. Then the AWS server that runs everything. And inside it, the brain - the routing engine and machine-learning models."},
+      {"t": "0:32-0:52", "visual": "Zoom into the phone: search bar, drive/walk pills, route cards, navigation", "narration": "In the app, the map is the home screen. Type or tap a destination, pick driving or walking, and you get up to three route options - the fastest one recommended, with arrival times. Tap Start, and it guides you turn by turn with a spoken voice, following your GPS until you arrive."},
+      {"t": "0:52-1:15", "visual": "Zoom into the server: nginx, blue/green containers, Redis, database, brain", "narration": "Every request travels from the phone to nginx, our front door, which passes it to the live app container. There, a FastAPI service answers. A Redis cache keeps it fast, and a database logs each trip. The heavy thinking happens in the brain beside it."},
+      {"t": "1:15-1:38", "visual": "Diagram of a road graph with A* path; then icons for the ML models", "narration": "Routing treats the city as a graph of intersections and streets, and uses the A-star algorithm to find the shortest path - plus two alternatives. Fifteen machine-learning models predict the arrival time, the fare, and even how likely a ride is to be cancelled, using regression, clustering, and probabilistic models."},
+      {"t": "1:38-2:02", "visual": "Pipeline animation: git push, build, registry, blue-green swap", "narration": "Shipping updates is fully automated. A single code push builds a Docker image, stores it, and deploys it with a blue-green swap - the new version only goes live after passing a health check, so there's never any downtime, and a bad release can be undone in one click."},
+      {"t": "2:02-2:22", "visual": "Real phone: search an address, switch to walking, start trip, arrive", "narration": "So to use it: search where you want to go, choose drive or walk, compare your routes, and start the trip. The app speaks each turn and tells you when you've arrived - a complete navigation experience, built end to end."},
+      {"t": "2:22-2:30", "visual": "Logo + tagline", "narration": "RideIQ - navigation, intelligence, and a real deployment pipeline, all in one."}
+    ],
+    "full_narration": "This is RideIQ - a ride-hailing and navigation app built completely from scratch. No Google Maps, no paid APIs - just open data and machine learning, running on our own cloud server. The system has four parts. On the left, the Android app - what you touch. Next, the CI/CD pipeline that ships our code automatically. Then the AWS server that runs everything. And inside it, the brain - the routing engine and machine-learning models. In the app, the map is the home screen. Type or tap a destination, pick driving or walking, and you get up to three route options - the fastest one recommended, with arrival times. Tap Start, and it guides you turn by turn with a spoken voice, following your GPS until you arrive. Every request travels from the phone to nginx, our front door, which passes it to the live app container. There, a FastAPI service answers. A Redis cache keeps it fast, and a database logs each trip. The heavy thinking happens in the brain beside it. Routing treats the city as a graph of intersections and streets, and uses the A-star algorithm to find the shortest path, plus two alternatives. Fifteen machine-learning models predict the arrival time, the fare, and even how likely a ride is to be cancelled, using regression, clustering, and probabilistic models. Shipping updates is fully automated. A single code push builds a Docker image, stores it, and deploys it with a blue-green swap - the new version only goes live after passing a health check, so there's never any downtime, and a bad release can be undone in one click. So to use it: search where you want to go, choose drive or walk, compare your routes, and start the trip. The app speaks each turn and tells you when you've arrived - a complete navigation experience, built end to end. RideIQ - navigation, intelligence, and a real deployment pipeline, all in one."
+  }
+}

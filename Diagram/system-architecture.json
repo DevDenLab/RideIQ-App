@@ -1,0 +1,180 @@
+{
+  "$comment": "Feed this to Gemini / Nano Banana Pro to generate the RideIQ system-architecture diagram. Use 'image_prompt' as the main instruction and 'spec' as the exact structure. Architecture description only.",
+  "meta": {
+    "project": "RideIQ",
+    "subtitle": "Self-hosted, ML-powered navigation + ride-hailing app (Android + FastAPI), deployed to AWS EC2 with blue-green CI/CD",
+    "version": "2.0",
+    "diagram_type": "high-level system architecture + request flow",
+    "orientation": "left-to-right",
+    "aspect_ratio": "16:9"
+  },
+
+  "image_prompt": "Create a clean, professional high-level software architecture diagram, left-to-right flow, flat modern style, rounded rectangles, soft shadows, clearly labeled arrows. Four vertical zones separated by faint dashed boundaries. ZONE 1 CLIENT: an Android phone showing the RideIQ map app with a search bar, a Drive/Walk toggle, and route-option cards; list its three tabs (Map, Insights, Profile); show it also pulls free map tiles directly from OpenStreetMap. ZONE 2 CI/CD PIPELINE: GitHub push to main triggers GitHub Actions, which builds a Docker image, pushes it to the ghcr.io registry, and SSHes into the server to run a blue-green deploy; include a small rollback loop and a separate 'build-city-graph' job that produces the road-graph files. ZONE 3 AWS EC2 HOST: an nginx reverse proxy on port 80 in front of two app containers labeled rideiq-blue and rideiq-green (only one live at a time; draw green solid/active, blue faded/idle), a shared Redis cache, a SQLite database on a mounted volume, and two baked-in graph files (city_graph.json for driving, walk_graph.json for walking). ZONE 4 BACKEND BRAIN (inside the live container): a FastAPI service exposing REST endpoints, an A* routing engine, and a stack of machine-learning models. Show the request path as a bold arrow: phone -> Elastic public IP -> nginx :80 -> live container :8000 -> routing engine + ML models -> back to the phone. Show an external call from the backend to OpenStreetMap Nominatim for address search and geocoding. Add a legend: green = active version, grey = idle/rollback, one arrow style for user traffic and another for the CI/CD deploy path. Keep every arrow labeled with its protocol (HTTPS/HTTP, SSH, Docker pull, Redis, SQLite, REST).",
+
+  "style": {
+    "look": "flat, modern, professional, whiteboard-clean",
+    "shapes": "rounded rectangles for services, cylinder for databases, phone frame for client, dashed box for the EC2 host boundary",
+    "palette": {
+      "client": "#6366F1",
+      "cicd": "#F59E0B",
+      "host_boundary": "#94A3B8",
+      "active": "#22C55E",
+      "idle": "#CBD5E1",
+      "cache": "#EF4444",
+      "database": "#0EA5E9",
+      "ml": "#8B5CF6",
+      "routing": "#0D9488",
+      "external": "#64748B"
+    },
+    "legend": [
+      {"symbol": "solid green", "means": "active app version serving traffic"},
+      {"symbol": "faded grey", "means": "idle version kept for instant rollback"},
+      {"symbol": "solid arrow", "means": "user request / live traffic"},
+      {"symbol": "dashed arrow", "means": "CI/CD deploy path"}
+    ]
+  },
+
+  "spec": {
+    "zones": [
+      {"id": "client", "label": "Client (Android)"},
+      {"id": "cicd", "label": "CI/CD Pipeline"},
+      {"id": "host", "label": "AWS EC2 Host (Elastic Public IP)"},
+      {"id": "brain", "label": "Backend Brain (live container)"}
+    ],
+
+    "components": [
+      {
+        "id": "app", "zone": "client", "type": "mobile app",
+        "label": "RideIQ Android app",
+        "tech": "Java, osmdroid (OpenStreetMap), Retrofit, TextToSpeech, Fused/GPS location",
+        "placement": "Runs on the user's phone; the only user-facing piece.",
+        "description": "Three tabs via bottom navigation. MAP (home): search bar with live autocomplete, Drive/Walk segmented toggle, tap-or-type pickup/drop-off, up to three route-option cards (recommended + slower alternatives with ETA, fare, arrival time), and turn-by-turn voice navigation that follows live GPS. INSIGHTS: the ML analytics screens. PROFILE: settings. Draws its own map from free OSM tiles and speaks directions with a male, faster voice."
+      },
+      {
+        "id": "tiles", "zone": "client", "type": "external tiles",
+        "label": "OSM map tiles (CARTO / Esri)",
+        "tech": "OpenStreetMap tile servers",
+        "placement": "Fetched directly by the app, not through the backend.",
+        "description": "Free street and satellite map imagery rendered under the route and markers. No Google Maps, no API key."
+      },
+      {
+        "id": "github", "zone": "cicd", "type": "ci",
+        "label": "GitHub Actions",
+        "tech": "GitHub Actions workflows (deploy-rideiq, build-city-graph)",
+        "placement": "Runs in GitHub's cloud on every push to main.",
+        "description": "deploy-rideiq: builds the backend Docker image and orchestrates the deploy. build-city-graph: a manual job that downloads OpenStreetMap roads (drive or walk) with osmnx and commits the graph files, which re-triggers a deploy."
+      },
+      {
+        "id": "registry", "zone": "cicd", "type": "registry",
+        "label": "ghcr.io container registry",
+        "tech": "GitHub Container Registry",
+        "placement": "Cloud registry between build and deploy.",
+        "description": "Stores each built image tagged by commit SHA plus 'latest'. The EC2 host pulls images from here. Rollback = redeploying an older SHA tag."
+      },
+      {
+        "id": "nginx", "zone": "host", "type": "reverse proxy",
+        "label": "nginx edge (port 80)",
+        "tech": "nginx",
+        "placement": "The single public door on the EC2 host.",
+        "description": "Reverse proxy on port 80. Routes all traffic to whichever app container is currently live, and is switched during a blue-green deploy. Only port 80 is exposed publicly."
+      },
+      {
+        "id": "blue", "zone": "host", "type": "app container",
+        "label": "rideiq-blue", "state": "idle",
+        "tech": "Docker container, FastAPI + uvicorn on :8000",
+        "placement": "One of two interchangeable app containers on the private docker network.",
+        "description": "The previous version, kept idle and ready for instant rollback."
+      },
+      {
+        "id": "green", "zone": "host", "type": "app container",
+        "label": "rideiq-green", "state": "active",
+        "tech": "Docker container, FastAPI + uvicorn on :8000",
+        "placement": "The currently live app container behind nginx.",
+        "description": "Serves all requests. During deploy, the new color is health-checked before nginx switches to it, so a bad release never reaches users (zero downtime)."
+      },
+      {
+        "id": "redis", "zone": "host", "type": "cache",
+        "label": "Redis",
+        "tech": "Redis 7",
+        "placement": "Shared container on the private network; never swapped.",
+        "description": "Caches repeated answers (analytics plots, identical quotes, geocoding results) so the app stays fast and external geocoder calls stay within rate limits."
+      },
+      {
+        "id": "sqlite", "zone": "host", "type": "database",
+        "label": "SQLite (rideiq.db)",
+        "tech": "SQLite on a mounted Docker volume",
+        "placement": "Persisted on a host volume so it survives deploys.",
+        "description": "Logs every quote (distance, ETA, fare, cancellation risk, timestamp). The planned scaling step replaces this with Postgres for many concurrent users."
+      },
+      {
+        "id": "graphs", "zone": "host", "type": "assets",
+        "label": "Road graphs (city_graph.json, walk_graph.json)",
+        "tech": "OpenStreetMap-derived JSON graphs, baked into the image",
+        "placement": "Bundled inside the backend image at build time.",
+        "description": "Two routable networks for Edmonton: a drivable-roads graph and a footpaths/sidewalks graph, each with intersections, street shapes, lengths, and names. Produced by the build-city-graph workflow."
+      },
+      {
+        "id": "fastapi", "zone": "brain", "type": "api",
+        "label": "FastAPI REST service",
+        "tech": "FastAPI, uvicorn",
+        "placement": "The application inside the live container.",
+        "description": "Exposes the endpoints the app calls: /route and /route-latlon (mode-aware routing with alternatives), /quote, /geocode and /search (address lookup), /reverse-geocode, /landmarks, the analytics endpoints, plus /health and /metrics. Auto-generates interactive docs at /docs."
+      },
+      {
+        "id": "astar", "zone": "brain", "type": "engine",
+        "label": "A* routing engine",
+        "tech": "A* search (Dijkstra + haversine heuristic), penalized re-runs for alternatives",
+        "placement": "Called by the routing endpoints inside FastAPI.",
+        "description": "Finds the shortest path over the drive or walk graph, traces real street shapes, generates turn-by-turn steps with street names, and produces up to three distinct routes by penalizing already-used roads and re-running."
+      },
+      {
+        "id": "ml", "zone": "brain", "type": "ml",
+        "label": "ML brain (15 models, 8 features)",
+        "tech": "scikit-learn, hmmlearn, pgmpy, numpy/scipy",
+        "placement": "Trained once at container startup; called per request.",
+        "description": "ETA prediction (Linear Regression + Random Forest + Neural Network), fare estimation (Random Forest + KNN), cancellation risk (Logistic + Decision Tree + AdaBoost), fraud check (SVM + Naive Bayes), surge zones (K-Means + Gaussian Mixture + Hierarchical), rider segments (PCA + LDA), driver-shift analysis (Hidden Markov Model), and cancellation causes (Bayesian Network)."
+      },
+      {
+        "id": "nominatim", "zone": "brain", "type": "external service",
+        "label": "OSM Nominatim geocoder",
+        "tech": "OpenStreetMap Nominatim (free)",
+        "placement": "External service the backend calls (and caches).",
+        "description": "Turns typed addresses into coordinates (/search, /geocode) and coordinates into addresses (/reverse-geocode), biased to Edmonton. Cached in Redis to respect its rate limit."
+      }
+    ],
+
+    "connections": [
+      {"from": "app", "to": "tiles", "label": "fetch map tiles", "kind": "external"},
+      {"from": "app", "to": "nginx", "label": "HTTP REST to Elastic IP :80", "kind": "traffic"},
+      {"from": "nginx", "to": "green", "label": "proxy_pass :8000 (live)", "kind": "traffic"},
+      {"from": "nginx", "to": "blue", "label": "idle (not routed)", "kind": "traffic_inactive"},
+      {"from": "green", "to": "fastapi", "label": "handles request", "kind": "internal"},
+      {"from": "fastapi", "to": "astar", "label": "route()", "kind": "internal"},
+      {"from": "fastapi", "to": "ml", "label": "predict ETA / fare / risk", "kind": "internal"},
+      {"from": "astar", "to": "graphs", "label": "load drive / walk graph", "kind": "internal"},
+      {"from": "fastapi", "to": "redis", "label": "cache get/set", "kind": "traffic"},
+      {"from": "fastapi", "to": "sqlite", "label": "log quotes", "kind": "traffic"},
+      {"from": "fastapi", "to": "nominatim", "label": "geocode / search (cached)", "kind": "external"},
+      {"from": "github", "to": "registry", "label": "docker build + push", "kind": "deploy"},
+      {"from": "github", "to": "nginx", "label": "SSH: blue-green swap + reload", "kind": "deploy"},
+      {"from": "registry", "to": "green", "label": "docker pull sha-<commit>", "kind": "deploy"},
+      {"from": "registry", "to": "blue", "label": "rollback: pull old sha", "kind": "deploy_rollback"},
+      {"from": "github", "to": "graphs", "label": "build-city-graph commits graph files", "kind": "deploy"}
+    ],
+
+    "request_flow": [
+      "1. User types or taps a destination; the app calls /search for live autocomplete.",
+      "2. App requests a route (/route-latlon) with the chosen mode (drive or walk).",
+      "3. nginx forwards to the live container; FastAPI runs A* on the matching graph and prices it with the ML models, returning the best route plus alternatives.",
+      "4. The app shows route-option cards; the user picks one and taps Start trip.",
+      "5. The app follows live GPS, speaks each turn, and announces arrival at the destination."
+    ],
+
+    "annotations": [
+      "Only one app color (blue/green) serves traffic at a time; the other is the rollback safety net.",
+      "The new version must pass a /health check before nginx switches to it -> zero-downtime deploys.",
+      "Maps and routing use only free OpenStreetMap data -- no Google Maps and no API key.",
+      "Redis (cache), the SQLite volume, and the baked-in graph files are the stateful/asset pieces that persist across deploys."
+    ]
+  }
+}

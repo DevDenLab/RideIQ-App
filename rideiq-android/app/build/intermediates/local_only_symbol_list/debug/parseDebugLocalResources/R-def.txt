@@ -12,6 +12,7 @@ id bottomNav
 id causesBtn
 id destField
 id distance
+id driveBtn
 id driverBtn
 id dropoffText
 id goBtn
@@ -19,7 +20,6 @@ id hour
 id info
 id map
 id mapBtn
-id modeBtn
 id myLocBtn
 id navBanner
 id nav_insights
@@ -45,6 +45,7 @@ id suggestionsList
 id surge
 id surgeBtn
 id traffic
+id walkBtn
 layout activity_main
 layout activity_profile
 layout activity_route_map
@@ -83,6 +84,8 @@ string raining
 string request_ride
 string reset_map
 string route_btn
+string seg_drive
+string seg_walk
 string segments
 string settings_mode
 string settings_nav

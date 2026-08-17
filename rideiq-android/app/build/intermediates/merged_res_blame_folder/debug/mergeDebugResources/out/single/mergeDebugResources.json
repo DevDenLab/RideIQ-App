@@ -1,7 +1,7 @@
 [
     {
-        "merged": "com.example.rideiq.app-debug-32:/drawable_bg_card.xml.flat",
-        "source": "com.example.rideiq.app-main-34:/drawable/bg_card.xml"
+        "merged": "C:\\Users\\tatva\\.gradle\\daemon\\9.3.0\\com.example.rideiq.app-debug-32:\\drawable_bg_card.xml.flat",
+        "source": "C:\\Users\\tatva\\.gradle\\daemon\\9.3.0\\com.example.rideiq.app-main-34:\\drawable\\bg_card.xml"
     },
     {
         "merged": "C:\\Users\\tatva\\.gradle\\daemon\\9.3.0\\com.example.rideiq.app-debug-32:\\drawable_ic_nav_profile.xml.flat",

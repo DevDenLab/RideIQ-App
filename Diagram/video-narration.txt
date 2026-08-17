@@ -1,0 +1,93 @@
+RIDEIQ — ARCHITECTURE EXPLAINER  (AI VIDEO NARRATION)
+Target length: ~2.5–3 minutes. Read at a calm, confident pace (~150 words/min).
+Scene cues in [brackets] tell the video which part of the diagram or app to show.
+You can paste the plain narration below into any AI-video / voiceover tool; the cues are optional.
+
+=======================================================================
+FULL NARRATION
+=======================================================================
+
+[OPEN ON: the RideIQ app on a phone, a route drawn across an Edmonton map]
+
+Meet RideIQ — a navigation and ride-hailing app built entirely from scratch.
+No Google Maps, no paid APIs. Just open-source maps, machine learning, and a
+production-grade cloud pipeline. Let's walk through how it all fits together.
+
+[CUT TO: the full architecture diagram, four zones left to right]
+
+At the highest level, RideIQ has four parts: the phone app, a CI/CD pipeline,
+a cloud server, and the backend "brain." Follow one request and it all makes sense.
+
+[HIGHLIGHT: the phone / Client zone]
+
+It starts on your phone. The Android app draws its map from free OpenStreetMap
+tiles and talks to the server over simple web requests. You type a destination and
+it suggests real addresses as you type. You pick Drive or Walk, and up to three
+routes appear as cards — the fastest one recommended, the slower ones greyed out
+with how much longer they take, plus the fare and your arrival time.
+
+[HIGHLIGHT: nginx and the blue/green containers on the EC2 host]
+
+Your request travels to a cloud server on Amazon EC2. The front door is nginx,
+which forwards it to whichever app container is live. There are always two —
+blue and green — but only one serves traffic at a time. The other is a spare,
+ready for instant rollback.
+
+[HIGHLIGHT: the backend brain — routing engine and ML models]
+
+Inside that container is the brain. First, the routing engine. A road network is
+just a graph — intersections are points, streets are connections weighted by length.
+An algorithm called A-star finds the shortest path, then re-runs while penalizing
+roads it already used, which is how it produces genuinely different alternatives.
+For walking, it uses a separate footpath graph and draws a dashed green line.
+
+[HIGHLIGHT: the stack of ML models]
+
+Then the machine-learning models price the trip. Fifteen models power eight features.
+Your time of arrival comes from an ensemble of linear regression, a random forest,
+and a neural network. Fare estimation compares your trip to similar past trips.
+Other models predict cancellation risk, detect fraud, cluster the city into surge
+zones with K-means, and even model a driver's shift with a Hidden Markov Model.
+The results come back, and your phone shows the route.
+
+[HIGHLIGHT: the CI/CD pipeline zone]
+
+Now, how does new code get here safely? Every push to GitHub triggers a pipeline.
+It builds a Docker image, stores it in a registry, then connects to the server and
+performs a blue-green deploy: it starts the new version, health-checks it, and only
+switches traffic once it's proven healthy. If anything's wrong, users never see it —
+and rolling back is just redeploying the previous version.
+
+[CUT TO: the app — start a trip, marker moving, arrival]
+
+So how do you actually use it? Set your pickup and destination, choose drive or walk,
+pick a route, and tap Start trip. The map follows your live GPS, a voice reads each
+turn — "in two hundred meters, turn left" — and when you reach your destination,
+it tells you: you have arrived.
+
+[CLOSE ON: the RideIQ logo]
+
+That's RideIQ — open maps, real machine learning, and a deployment pipeline that
+ships new features without ever taking the app down.
+
+=======================================================================
+PLAIN NARRATION ONLY  (copy-paste for a voiceover tool)
+=======================================================================
+
+Meet RideIQ — a navigation and ride-hailing app built entirely from scratch. No Google Maps, no paid APIs. Just open-source maps, machine learning, and a production-grade cloud pipeline. Let's walk through how it all fits together.
+
+At the highest level, RideIQ has four parts: the phone app, a CI/CD pipeline, a cloud server, and the backend brain. Follow one request and it all makes sense.
+
+It starts on your phone. The Android app draws its map from free OpenStreetMap tiles and talks to the server over simple web requests. You type a destination and it suggests real addresses as you type. You pick Drive or Walk, and up to three routes appear as cards — the fastest one recommended, the slower ones greyed out with how much longer they take, plus the fare and your arrival time.
+
+Your request travels to a cloud server on Amazon EC2. The front door is nginx, which forwards it to whichever app container is live. There are always two — blue and green — but only one serves traffic at a time. The other is a spare, ready for instant rollback.
+
+Inside that container is the brain. First, the routing engine. A road network is just a graph — intersections are points, streets are connections weighted by length. An algorithm called A-star finds the shortest path, then re-runs while penalizing roads it already used, which is how it produces genuinely different alternatives. For walking, it uses a separate footpath graph and draws a dashed green line.
+
+Then the machine-learning models price the trip. Fifteen models power eight features. Your time of arrival comes from an ensemble of linear regression, a random forest, and a neural network. Fare estimation compares your trip to similar past trips. Other models predict cancellation risk, detect fraud, cluster the city into surge zones with K-means, and even model a driver's shift with a Hidden Markov Model. The results come back, and your phone shows the route.
+
+Now, how does new code get here safely? Every push to GitHub triggers a pipeline. It builds a Docker image, stores it in a registry, then connects to the server and performs a blue-green deploy: it starts the new version, health-checks it, and only switches traffic once it's proven healthy. If anything's wrong, users never see it — and rolling back is just redeploying the previous version.
+
+So how do you actually use it? Set your pickup and destination, choose drive or walk, pick a route, and tap Start trip. The map follows your live GPS, a voice reads each turn — "in two hundred meters, turn left" — and when you reach your destination, it tells you: you have arrived.
+
+That's RideIQ — open maps, real machine learning, and a deployment pipeline that ships new features without ever taking the app down.

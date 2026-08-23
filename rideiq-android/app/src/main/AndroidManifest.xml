@@ -20,5 +20,6 @@
         </activity>
         <activity android:name=".MainActivity" android:exported="false" android:label="Insights" />
         <activity android:name=".ProfileActivity" android:exported="false" android:label="Profile" />
+        <activity android:name=".DirectionsActivity" android:exported="false" android:label="Directions" />
     </application>
 </manifest>

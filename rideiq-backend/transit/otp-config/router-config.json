@@ -1,16 +1,61 @@
+// Runtime routing config for RideIQ's transit engine.
+// OTP parses its config files with comments allowed, so this is documentation
+// that lives with the settings rather than a "_comment" key it would reject.
 {
-  "_comment": [
-    "Runtime routing defaults for RideIQ's transit engine.",
-    "walkSpeed 1.33 m/s is OTP's average-adult default and roughly matches the",
-    "walking speed our own walk_graph routing already assumes, so a walk leg",
-    "costed by OTP and one costed by routing.py do not disagree with each other.",
-    "transferSlack is the buffer a rider needs between alighting and boarding;",
-    "too small and the plan looks fast but is not catchable in real life."
-  ],
   "routingDefaults": {
-    "walkSpeed": 1.33,
+    "walk": {
+      // OTP's average-adult default, and roughly the pace routing.py already
+      // assumes -- so a walk leg costed by OTP and one costed by our own graph
+      // do not quietly disagree about how long the same block takes.
+      "speed": 1.33
+    },
+    // The buffer between alighting and boarding. Too small and the plan looks
+    // fast but is not catchable in real life.
     "transferSlack": "2m",
     "numItineraries": 3,
     "maxJourneyDuration": "3h"
-  }
+  },
+
+  // GTFS-realtime. The static graph answers "what is the plan"; these answer
+  // "is it actually running on time". The City of Edmonton publishes all three
+  // feeds openly and keylessly, on the same host as the schedule zip.
+  //
+  // feedId must match the id the graph was built with -- ETS publishes "1". Get
+  // it wrong and OTP polls happily and applies nothing, which looks like working.
+  //
+  // These are polled from wherever OTP runs, so a container with no outbound
+  // internet degrades to schedule-only rather than failing: OTP logs the fetch
+  // error and keeps serving the timetable.
+  "updaters": [
+    {
+      "type": "stop-time-updater",
+      "feedId": "1",
+      "frequency": "45s",
+      // Recovers updates whose TripDescriptor does not name a trip we know, by
+      // matching on route, direction and start time instead.
+      //
+      // Measured coverage: about 60% of ETS trip updates apply. The ~1000 per
+      // poll that do not are not a config problem and fuzzy matching does not
+      // rescue them -- ETS identifies those trips with GTFS-RT's newer
+      // `modified_trip` / trip-modifications extension rather than a plain
+      // trip_id, and OTP 2.9 does not read it for stop-time updates. Those trips
+      // fall back to their scheduled times, which is correct but not live. In
+      // practice buses tend to carry realtime and the LRT lines tend not to.
+      "fuzzyTripMatching": true,
+      "url": "https://gtfs.edmonton.ca/TMGTFSRealTimeWebService/TripUpdate/TripUpdates.pb"
+    },
+    {
+      "type": "vehicle-positions",
+      "feedId": "1",
+      "frequency": "30s",
+      "fuzzyTripMatching": true,
+      "url": "https://gtfs.edmonton.ca/TMGTFSRealTimeWebService/Vehicle/VehiclePositions.pb"
+    },
+    {
+      "type": "real-time-alerts",
+      "feedId": "1",
+      "frequency": "2m",
+      "url": "https://gtfs.edmonton.ca/TMGTFSRealTimeWebService/Alert/Alerts.pb"
+    }
+  ]
 }

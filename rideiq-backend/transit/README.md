@@ -62,6 +62,36 @@ OTP 2.9 serves a GraphQL API at `/otp/gtfs/v1` (the old REST `plan` endpoint is 
 There is a query browser at `http://localhost:8081/graphiql` for poking at it by hand.
 `otp.py plan` shows the minimal query shape that Phase 2's `/transit` endpoint builds on.
 
+## Live data (GTFS-realtime)
+
+The static graph answers "what is the plan". Three GTFS-realtime feeds, configured
+as OTP updaters in [router-config.json](otp-config/router-config.json), answer "is it
+actually running on time":
+
+| Feed | Polled | Gives us |
+|---|---|---|
+| TripUpdates | 45 s | Delays — every leg's clock time is delay-adjusted |
+| VehiclePositions | 30 s | Where the buses actually are |
+| Alerts | 2 min | Detours, closures, elevator outages |
+
+Measured coverage, so nobody is surprised later:
+
+- **Vehicle positions: ~98%** applied.
+- **Trip updates: ~61%** applied. The rest are not a config problem. ETS identifies
+  those trips using GTFS-realtime's newer `modified_trip` / trip-modifications
+  extension instead of a plain `trip_id`, and OTP 2.9 does not read it for
+  stop-time updates. `fuzzyTripMatching` does not rescue them. Those trips fall
+  back to their scheduled times — correct, just not live.
+- In practice **buses usually carry realtime and the LRT lines usually do not.**
+
+So `/transit` reports `realtime` and `status` per itinerary, and the app shows a
+"● Live · 2 min late" badge **only** when a feed actually said so. An itinerary
+with no live data shows no badge, rather than "on time" — which would be a guess
+dressed up as a fact.
+
+If OTP runs somewhere with no outbound internet, the updaters log fetch errors and
+the engine keeps serving the timetable. Realtime degrades; routing does not break.
+
 ## Deploying it
 
 Two GitHub Actions workflows, deliberately separate from the app's deploy:

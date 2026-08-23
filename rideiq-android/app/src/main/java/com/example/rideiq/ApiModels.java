@@ -105,8 +105,10 @@ public class ApiModels {
         public String route;             // "8", "Capital" -- null on a walk leg
         public String headsign;          // "toward Abbottsfield"
         public String color;             // "#..." when the agency publishes one
-        public String depart;            // "17:48" local
+        public String depart;            // "17:48" local -- already delay-adjusted
         public String arrive;            // "18:05" local
+        public boolean realtime;         // a live feed backed this leg's times
+        public String status;            // "on time" / "3 min late" -- null if scheduled only
         @SerializedName("distance_m") public double distanceM;
         @SerializedName("duration_min") public int durationMin;
         @SerializedName("polyline_latlon")
@@ -114,6 +116,14 @@ public class ApiModels {
 
         /** True when you are riding something rather than walking to it. */
         public boolean isRide() { return mode != null && !"WALK".equals(mode); }
+    }
+
+    /** A live service alert riding along with an itinerary. */
+    public static class TransitAlert {
+        public String header;
+        public String description;
+        public String severity;
+        public String effect;
     }
 
     /** One complete door-to-door option: walk, ride, maybe transfer, walk. */
@@ -124,6 +134,9 @@ public class ApiModels {
         public int transfers;
         @SerializedName("walk_distance_m") public double walkDistanceM;
         public java.util.List<String> routes;         // ["8", "Capital"] for the card
+        public boolean realtime;                      // any ride leg had live data
+        public String status;                         // first live punctuality, if any
+        public java.util.List<TransitAlert> alerts;   // de-duplicated across legs
         public java.util.List<TransitLeg> legs;
         public java.util.List<String> instructions;   // ready-made lines for the list
     }

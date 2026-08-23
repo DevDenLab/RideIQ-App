@@ -25,6 +25,8 @@ public class DirectionsActivity extends AppCompatActivity {
      * backend composes the text and this screen just lists it.
      */
     public static List<String> LINES;
+    /** Live service alerts for the shown itinerary (detours, closures). May be null. */
+    public static List<ApiModels.TransitAlert> ALERTS;
 
     @Override
     protected void onCreate(Bundle s) {
@@ -58,6 +60,17 @@ public class DirectionsActivity extends AppCompatActivity {
                 }
             }
         }
+        // Alerts go last, after the plan. They are context for a trip you have
+        // already decided on, not a reason to hide the steps behind a warning.
+        if (ALERTS != null && !ALERTS.isEmpty()) {
+            lines.add("—— Service alerts ——");
+            for (ApiModels.TransitAlert a : ALERTS) {
+                String body = (a.description != null && !a.description.isEmpty()
+                        && !a.description.equals(a.header)) ? "\n" + a.description : "";
+                lines.add("⚠  " + a.header + body);
+            }
+        }
+
         if (lines.isEmpty()) lines.add("No steps available. Set a destination and route first.");
 
         list.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_list_item_1, lines));

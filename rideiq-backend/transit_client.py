@@ -97,12 +97,20 @@ query Plan($from: InputCoordinates!, $to: InputCoordinates!, $date: String!,
         startTime
         endTime
         realTime
+        realtimeState
         headsign
-        from { name lat lon stop { code platformCode } }
-        to { name lat lon stop { code platformCode } }
+        from {
+          name lat lon stop { code platformCode }
+          departure { estimated { delay } }
+        }
+        to {
+          name lat lon stop { code platformCode }
+          arrival { estimated { delay } }
+        }
         route { shortName longName mode color textColor }
         trip { tripHeadsign }
         legGeometry { points }
+        alerts { alertHeaderText alertDescriptionText alertSeverityLevel alertEffect }
       }
     }
   }
@@ -137,6 +145,61 @@ def health():
         return {"ok": False, "url": OTP_URL, "error": str(e)}
 
 
+# ── realtime ───────────────────────────────────────────────────────────────
+def _duration_seconds(value):
+    """OTP's Duration scalar is ISO-8601 ('PT3M30S', '-PT45S'), not a number."""
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return int(value)
+    text = str(value).strip().upper()
+    sign = -1 if text.startswith("-") else 1
+    text = text.lstrip("+-")
+    if not text.startswith("PT"):
+        return None
+    total, number = 0, ""
+    for ch in text[2:]:
+        if ch.isdigit() or ch == ".":
+            number += ch
+        else:
+            unit = {"H": 3600, "M": 60, "S": 1}.get(ch)
+            if unit and number:
+                total += float(number) * unit
+            number = ""
+    return int(sign * total)
+
+
+def _delay(place, key):
+    est = ((place or {}).get(key) or {}).get("estimated") or {}
+    return _duration_seconds(est.get("delay"))
+
+
+def _delay_text(seconds):
+    """Rider-facing punctuality. Under a minute either way is just 'on time'."""
+    if seconds is None:
+        return None
+    minutes = int(round(seconds / 60.0))
+    if minutes == 0:
+        return "on time"
+    if minutes > 0:
+        return "%d min late" % minutes
+    return "%d min early" % abs(minutes)
+
+
+def _alerts(raw_alerts):
+    out = []
+    for a in raw_alerts or []:
+        header = (a.get("alertHeaderText") or "").strip()
+        body = (a.get("alertDescriptionText") or "").strip()
+        if not (header or body):
+            continue
+        out.append({"header": header or body,
+                    "description": body,
+                    "severity": a.get("alertSeverityLevel"),
+                    "effect": a.get("alertEffect")})
+    return out
+
+
 # ── normalisation ──────────────────────────────────────────────────────────
 def _clock(ms, tz):
     dt = datetime.fromtimestamp(ms / 1000.0, tz)
@@ -169,7 +232,17 @@ def _leg(raw, tz):
         # ETS mostly leaves route_color empty for buses and sets it for LRT; the
         # app falls back to its own palette when this is None.
         leg["color"] = ("#" + route["color"]) if route.get("color") else None
+        # startTime/endTime above are already realtime-adjusted when OTP has a
+        # trip update, so delay is the extra bit a rider wants: not just "5:48"
+        # but "5:48, running 3 min late".
         leg["realtime"] = bool(raw.get("realTime"))
+        leg["realtime_state"] = raw.get("realtimeState")
+        delay = _delay(raw.get("from"), "departure")
+        if delay is None:
+            delay = _delay(raw.get("to"), "arrival")
+        leg["delay_s"] = delay
+        leg["status"] = _delay_text(delay) if leg["realtime"] else None
+        leg["alerts"] = _alerts(raw.get("alerts"))
         for end in ("from", "to"):
             stop = (raw.get(end) or {}).get("stop") or {}
             code = stop.get("code") or stop.get("platformCode")
@@ -187,9 +260,12 @@ def _instructions(legs):
                        % (leg["duration_min"], leg["distance_m"], leg["to"]))
         else:
             head = (" toward " + leg["headsign"]) if leg.get("headsign") else ""
+            # Only say "3 min late" when a live feed actually told us so; inventing
+            # punctuality from the timetable would be worse than saying nothing.
+            when = leg["depart"] + ((" (%s)" % leg["status"]) if leg.get("status") else "")
             out.append("Board %s %s%s at %s, %s — ride %d min, get off at %s"
                        % (leg.get("mode_label", leg["mode"]), leg.get("route", ""), head,
-                          leg["from"], leg["depart"], leg["duration_min"], leg["to"]))
+                          leg["from"], when, leg["duration_min"], leg["to"]))
     if out:
         out.append("You have arrived at your destination")
     return out
@@ -200,6 +276,14 @@ def _itinerary(raw, tz):
     rides = [l for l in legs if l["mode"] in RIDE_MODES]
     depart_hm, depart_iso = _clock(raw["startTime"], tz)
     arrive_hm, arrive_iso = _clock(raw["endTime"], tz)
+    # One de-duplicated alert list for the whole trip: the same "elevator out at
+    # Churchill" rides along on every leg that touches the station.
+    alerts, seen = [], set()
+    for leg in legs:
+        for a in leg.get("alerts") or []:
+            if a["header"] not in seen:
+                seen.add(a["header"])
+                alerts.append(a)
     return {
         "duration_min": round(raw["duration"] / 60),
         "depart": depart_iso,
@@ -210,6 +294,10 @@ def _itinerary(raw, tz):
         "transfers": max(0, len(rides) - 1),
         "walk_distance_m": round(raw.get("walkDistance") or 0),
         "routes": [l.get("route") for l in rides if l.get("route")],
+        # True only when a live feed backed at least one ride on this trip.
+        "realtime": any(l.get("realtime") for l in rides),
+        "status": next((l["status"] for l in rides if l.get("status")), None),
+        "alerts": alerts,
         "legs": legs,
         "instructions": _instructions(legs),
     }

@@ -636,6 +636,19 @@ public class RouteMapActivity extends AppCompatActivity {
             when.setTextColor(Color.parseColor("#888888"));
             card.addView(when);
 
+            // Only claim punctuality when a live feed actually said so. ETS covers
+            // buses far better than the LRT, so plenty of real itineraries carry no
+            // realtime at all -- those show no badge rather than "on time", which
+            // would be a guess dressed up as a fact.
+            if (it.realtime && it.status != null) {
+                TextView live = new TextView(this);
+                live.setText("● Live · " + it.status);
+                live.setTextSize(11);
+                live.setTextColor(Color.parseColor(
+                        it.status.contains("late") ? "#C62828" : "#2E7D32"));
+                card.addView(live);
+            }
+
             card.setOnClickListener(v -> selectItinerary(idx));
             optionsRow.addView(card);
         }
@@ -692,11 +705,18 @@ public class RouteMapActivity extends AppCompatActivity {
         navSteps = new ArrayList<>();
         startBtn.setEnabled(false);
 
-        info.setText(String.format(Locale.US,
-                "%s\n%d min  ·  depart %s, arrive %s  ·  %s\nTap “Steps” for the leg-by-leg plan.",
+        StringBuilder head = new StringBuilder(String.format(Locale.US,
+                "%s\n%d min  ·  depart %s, arrive %s  ·  %s",
                 routeSummary(it), it.durationMin, it.departTime, it.arriveTime,
                 it.transfers == 0 ? "no transfers"
                         : it.transfers + (it.transfers == 1 ? " transfer" : " transfers")));
+        if (it.realtime && it.status != null) head.append("  ·  ● live, ").append(it.status);
+        // Surface at most one alert here; the rest are on the Steps screen. A wall
+        // of detour notices on the map panel buries the plan itself.
+        if (it.alerts != null && !it.alerts.isEmpty())
+            head.append("\n⚠ ").append(it.alerts.get(0).header);
+        head.append("\nTap “Steps” for the leg-by-leg plan.");
+        info.setText(head.toString());
 
         if (!all.isEmpty())
             map.post(() -> map.zoomToBoundingBox(BoundingBox.fromGeoPoints(all), true, 90));
@@ -1095,6 +1115,7 @@ public class RouteMapActivity extends AppCompatActivity {
                     Math.min(selectedItinerary, transitOptions.size() - 1));
             DirectionsActivity.STEPS = null;
             DirectionsActivity.LINES = it.instructions;
+            DirectionsActivity.ALERTS = it.alerts;
             DirectionsActivity.SUMMARY = String.format(Locale.US,
                     "%s\n%d min · depart %s, arrive %s · %.0f m walking",
                     routeSummary(it), it.durationMin, it.departTime, it.arriveTime,
@@ -1107,6 +1128,7 @@ public class RouteMapActivity extends AppCompatActivity {
             return;
         }
         DirectionsActivity.LINES = null;
+        DirectionsActivity.ALERTS = null;
         DirectionsActivity.STEPS = navSteps;
         String summary = "Turn-by-turn directions";
         if (routeOptions != null && selectedOption < routeOptions.size()) {

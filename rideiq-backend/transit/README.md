@@ -62,6 +62,30 @@ OTP 2.9 serves a GraphQL API at `/otp/gtfs/v1` (the old REST `plan` endpoint is 
 There is a query browser at `http://localhost:8081/graphiql` for poking at it by hand.
 `otp.py plan` shows the minimal query shape that Phase 2's `/transit` endpoint builds on.
 
+## Deploying it
+
+Two GitHub Actions workflows, deliberately separate from the app's deploy:
+
+| Workflow | When | What it does |
+|---|---|---|
+| [build-transit-graph](../../.github/workflows/build-transit-graph.yml) | manual, plus the 1st and 15th | Rebuilds `graph.obj` in the cloud and publishes it as the rolling `transit-graph` release asset |
+| [deploy-transit](../../.github/workflows/deploy-transit.yml) | manual, or triggered by the above | Builds the OTP image, copies the graph to EC2, restarts `rideiq-otp` |
+
+The engine listens on the private `appnet` docker network only — nginx never
+proxies to it, and no port is published. The only thing that talks to OTP is
+FastAPI.
+
+This is **not** blue-green. Two JVMs holding the graph will not fit on the 8 GB
+host next to two API replicas and redis, so a graph swap costs about a minute of
+`/transit` returning 503. That is the one endpoint affected; driving and walking
+routes never touch OTP, and the app falls back to the Maps handoff meanwhile.
+
+Locally the same thing runs as a compose profile:
+
+```bash
+docker compose --profile transit up --build
+```
+
 ## Keeping schedules current
 
 `feed_info.txt` in the ETS feed carries `feed_start_date` / `feed_end_date` — usually a

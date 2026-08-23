@@ -1,0 +1,163 @@
+# =============================================================================
+# deploy-transit: put the OpenTripPlanner engine on the EC2 host.
+#
+# Separate from deploy-rideiq on purpose. The app deploys on every push to main;
+# the transit engine only changes when the schedule does, and restarting a JVM
+# that spends a minute loading a 100 MB graph on every backend commit would be
+# pure waste. build-transit-graph triggers this when it publishes a new graph.
+#
+# Honest caveat: this is NOT blue-green. Two OTP instances will not fit in the
+# 8 GB host alongside two FastAPI replicas and redis, so there is a ~1 minute
+# window where /transit returns 503 while the new graph loads. The app treats a
+# 503 as "fall back to the Google Maps handoff", which is exactly the pre-transit
+# behaviour — degraded, not broken. Driving and walking routes are untouched.
+#
+# Prerequisites: the same EC2_HOST / EC2_USER / EC2_SSH_KEY secrets deploy-rideiq
+# already uses, and a graph published by build-transit-graph.
+# =============================================================================
+
+name: deploy-transit
+
+on:
+  workflow_dispatch:
+    inputs:
+      rebuild_image:
+        description: "Rebuild the OTP image (only needed when the Dockerfile or OTP version changes)"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+
+concurrency:
+  group: deploy-transit
+  cancel-in-progress: false
+
+jobs:
+  build-otp-image:
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.img.outputs.ref }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Compute image ref
+        id: img
+        run: |
+          NAME="${GITHUB_REPOSITORY,,}-otp"
+          echo "name=${NAME}" >> "$GITHUB_OUTPUT"
+          echo "ref=${REGISTRY}/${NAME}:latest" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to ghcr.io
+        if: ${{ inputs.rebuild_image }}
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push the OTP image
+        if: ${{ inputs.rebuild_image }}
+        uses: docker/build-push-action@v6
+        with:
+          context: ./rideiq-backend/transit
+          push: true
+          tags: |
+            ${{ steps.img.outputs.ref }}
+            ${{ env.REGISTRY }}/${{ steps.img.outputs.name }}:sha-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  ship-graph:
+    needs: build-otp-image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # Pull the asset here and push it over SSH, rather than curling it from the
+      # host: that way the host needs no GitHub credentials and this keeps working
+      # if the repo is ever made private.
+      - name: Download the published graph
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download transit-graph --repo "$GITHUB_REPOSITORY" \
+            --pattern 'graph.obj.gz' --pattern 'graph-info.json' --dir .
+          cat graph-info.json
+          ls -lh graph.obj.gz
+
+      - name: Copy the graph to EC2
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: "graph.obj.gz,graph-info.json"
+          target: "/tmp/rideiq-transit"
+
+      - name: Load the graph and (re)start OTP
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          command_timeout: 15m
+          script: |
+            set -e
+            IMAGE="${{ needs.build-otp-image.outputs.image }}"
+            OTP_DIR=/opt/rideiq/otp
+            echo "Image: $IMAGE"
+
+            sudo mkdir -p "$OTP_DIR"
+            sudo chown "$USER" "$OTP_DIR"
+
+            # Unpack beside the live graph, then swap. A half-written graph.obj is
+            # a container that boots into an unreadable file.
+            gunzip -c /tmp/rideiq-transit/graph.obj.gz > "$OTP_DIR/graph.obj.new"
+            mv -f "$OTP_DIR/graph.obj.new" "$OTP_DIR/graph.obj"
+            cp -f /tmp/rideiq-transit/graph-info.json "$OTP_DIR/graph-info.json"
+            rm -rf /tmp/rideiq-transit
+            ls -lh "$OTP_DIR"
+
+            docker pull "$IMAGE"
+            docker network inspect appnet >/dev/null 2>&1 || docker network create appnet
+
+            # No -p: only FastAPI talks to OTP, over the private network. Nothing
+            # about the transit engine is reachable from the internet.
+            docker rm -f rideiq-otp 2>/dev/null || true
+            docker run -d --name rideiq-otp --network appnet --restart unless-stopped \
+              -v "$OTP_DIR":/var/otp \
+              -e OTP_HEAP=3G \
+              "$IMAGE"
+
+            # Loading the graph takes a while; wait for it rather than declaring
+            # victory at `docker run`.
+            READY=0
+            for i in $(seq 1 60); do
+              if docker exec rideiq-otp curl -fsS -m 3 -X POST \
+                   -H 'Content-Type: application/json' \
+                   -d '{"query":"{feeds{feedId}}"}' \
+                   http://localhost:8080/otp/gtfs/v1 >/dev/null 2>&1; then
+                READY=1; break
+              fi
+              echo "waiting for OTP to load the graph... ($i)"
+              sleep 5
+            done
+            if [ "$READY" -ne 1 ]; then
+              echo "OTP never became ready. Transit stays down; the app falls back."
+              docker logs --tail 80 rideiq-otp || true
+              exit 1
+            fi
+
+            echo "OTP is serving. Checking the app can see it:"
+            for c in rideiq-blue rideiq-green; do
+              docker ps -q -f "name=^${c}$" | grep -q . || continue
+              docker exec "$c" python -c "import urllib.request,json; print('$c ->', urllib.request.urlopen('http://localhost:8000/transit/status').read().decode())" || true
+            done
+
+            docker image prune -af || true

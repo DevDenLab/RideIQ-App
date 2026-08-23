@@ -1,0 +1,157 @@
+# =============================================================================
+# build-transit-graph: rebuild the OpenTripPlanner graph from Edmonton's live
+# GTFS feed and OpenStreetMap. The transit sibling of build-city-graph.
+#
+# Run it MANUALLY (Actions -> "build-transit-graph" -> Run workflow), or let the
+# monthly schedule do it. It downloads ~550 MB, builds graph.obj in the cloud, and
+# publishes it as an asset on the "transit-graph" release — NOT into git, because
+# it is ~100 MB of binary that changes every few weeks. deploy-transit then pulls
+# that asset onto the EC2 host.
+#
+# Why this has to run on a schedule at all: the ETS feed carries a feed_end_date,
+# usually only a few weeks out. Past it, OpenTripPlanner does not return stale
+# times — it returns nothing at all, and transit silently stops working. The job
+# fails loudly if the freshly built graph expires within a fortnight, so a dead
+# feed shows up here rather than in the app.
+# =============================================================================
+
+name: build-transit-graph
+
+on:
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: "Ship the new graph to EC2 when the build succeeds"
+        required: true
+        default: true
+        type: boolean
+  schedule:
+    # 09:00 UTC on the 1st and 15th — ETS republishes on no fixed calendar, and a
+    # fortnightly rebuild keeps us comfortably inside every feed window so far.
+    - cron: "0 9 1,15 * *"
+
+permissions:
+  contents: write        # publishes the graph as a release asset
+
+concurrency:
+  group: transit-graph
+  cancel-in-progress: false
+
+jobs:
+  build-graph:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # OTP 2.9's jar will not start on anything below 25. otp.py would download a
+      # private JDK if it had to, but on CI it is cheaper to let the runner cache
+      # one for us.
+      - name: Set up Java 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Install osmium (clip-only dependency)
+        run: pip install osmium
+
+      - name: Free up disk for the OSM extract
+        run: |
+          # The provincial extract, the clip, the jar and the graph together need
+          # more room than a runner has spare with all its preinstalled toolchains.
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          df -h /
+
+      - name: Fetch GTFS + OSM + OTP
+        working-directory: rideiq-backend/transit
+        run: python otp.py fetch
+
+      - name: Record what the feed says about itself
+        id: feed
+        working-directory: rideiq-backend/transit
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import csv, io, zipfile
+          z = zipfile.ZipFile("data/gtfs.zip")
+          row = next(csv.DictReader(io.StringIO(
+              z.read("feed_info.txt").decode("utf-8-sig"))))
+          for key, col in (("version", "feed_version"),
+                           ("start", "feed_start_date"),
+                           ("end", "feed_end_date")):
+              print("%s=%s" % (key, row.get(col, "").strip()))
+          PY
+
+      - name: Clip Alberta down to the transit service area
+        working-directory: rideiq-backend/transit
+        run: python otp.py clip
+
+      - name: Build the graph
+        working-directory: rideiq-backend/transit
+        env:
+          OTP_HEAP: 6G
+        run: python otp.py build
+
+      - name: Refuse to ship a graph that is about to expire
+        env:
+          FEED_END: ${{ steps.feed.outputs.end }}
+        run: |
+          python - <<'PY'
+          import os, sys
+          from datetime import date, datetime, timedelta
+          end = os.environ["FEED_END"]
+          if not end:
+              print("::warning::feed_info.txt has no feed_end_date; cannot check freshness")
+              sys.exit(0)
+          expires = datetime.strptime(end, "%Y%m%d").date()
+          left = (expires - date.today()).days
+          print("feed_end_date %s (%d days out)" % (expires, left))
+          if left < 14:
+              print("::error::The ETS feed expires in %d days. Past feed_end_date OTP "
+                    "returns no itineraries at all, so shipping this graph would take "
+                    "transit down. Check data.edmonton.ca for a newer feed." % left)
+              sys.exit(1)
+          PY
+
+      - name: Compress the graph
+        working-directory: rideiq-backend/transit/data
+        run: |
+          gzip -9 -c graph.obj > graph.obj.gz
+          ls -lh graph.obj graph.obj.gz
+          cat > graph-info.json <<EOF
+          {
+            "otp_version": "2.9.0",
+            "feed_version": "${{ steps.feed.outputs.version }}",
+            "feed_start_date": "${{ steps.feed.outputs.start }}",
+            "feed_end_date": "${{ steps.feed.outputs.end }}",
+            "built_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "built_by": "${{ github.run_id }}"
+          }
+          EOF
+          cat graph-info.json
+
+      # One rolling release rather than one per build: the graph has no history
+      # worth keeping, and old ones are just 100 MB each of dead weight.
+      - name: Publish as the "transit-graph" release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        working-directory: rideiq-backend/transit/data
+        run: |
+          gh release delete transit-graph --yes --cleanup-tag 2>/dev/null || true
+          gh release create transit-graph graph.obj.gz graph-info.json \
+            --title "Transit graph (ETS feed ${{ steps.feed.outputs.version }})" \
+            --notes "OpenTripPlanner 2.9.0 graph for the Edmonton metro.
+          Feed ${{ steps.feed.outputs.version }}, valid ${{ steps.feed.outputs.start }} to ${{ steps.feed.outputs.end }}.
+          Built by run ${{ github.run_id }}. Consumed by deploy-transit."
+
+      - name: Ship it
+        if: ${{ github.event_name == 'schedule' || inputs.deploy }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run deploy-transit.yml --ref "${{ github.ref_name }}"

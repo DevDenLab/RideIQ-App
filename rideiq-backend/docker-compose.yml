@@ -1,7 +1,11 @@
 # docker-compose.yml — RideIQ full stack.
 #
 #   Android app → nginx (LB :8080) → api1 / api2 (FastAPI, 15 ML models) → redis (cache)
-#                                          └──────────────────────────────→ sqlite (DB)
+#                                          ├──────────────────────────────→ sqlite (DB)
+#                                          └── /transit ─────────────────→ otp (OpenTripPlanner)
+#
+# otp is opt-in (`--profile transit`) and never exposed publicly -- only the API
+# containers reach it. See transit/README.md.
 #
 # Start:  docker compose up --build
 # Docs:   http://localhost:8080/docs
@@ -13,12 +17,26 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
 
+  # Public-transit routing engine. Needs transit/data/graph.obj to exist first:
+  #     cd transit && python otp.py all
+  # Start it with `docker compose --profile transit up`; without that profile the
+  # stack comes up exactly as before and /transit returns 503.
+  otp:
+    profiles: ["transit"]
+    build: ./transit
+    restart: unless-stopped
+    environment:
+      - OTP_HEAP=3G
+    volumes:
+      - ./transit/data:/var/otp
+
   api1:
     build: .
     environment:
       - REDIS_URL=redis://redis:6379/0
       - INSTANCE_ID=api-1
       - DB_PATH=/data/rideiq.db
+      - OTP_URL=http://otp:8080
     volumes:
       - dbdata:/data
     depends_on: [redis]
@@ -29,6 +47,7 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - INSTANCE_ID=api-2
       - DB_PATH=/data/rideiq.db
+      - OTP_URL=http://otp:8080
     volumes:
       - dbdata:/data
     depends_on: [redis]

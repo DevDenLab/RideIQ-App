@@ -130,10 +130,15 @@ jobs:
             # Clear a stale container with the new name, then start NEW color.
             # No -p: nginx reaches it by name over the private network.
             docker ps -aq -f "name=^${NEW_NAME}$" | grep -q . && docker rm -f "$NEW_NAME" || true
+            # OTP_URL points at the transit engine on the private network. It is
+            # deliberately not a dependency: if rideiq-otp is absent or reloading a
+            # graph, /transit returns 503 and the app falls back to the Maps
+            # handoff. Driving and walking routes never touch it.
             docker run -d --name "$NEW_NAME" --network appnet --restart unless-stopped \
               -e REDIS_URL=redis://rideiq-redis:6379/0 \
               -e DB_PATH=/data/rideiq.db \
               -e INSTANCE_ID="$NEW" \
+              -e OTP_URL=http://rideiq-otp:8080 \
               -v rideiq_data:/data \
               "$REF"
 

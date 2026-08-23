@@ -118,6 +118,17 @@ public class ApiModels {
         public boolean isRide() { return mode != null && !"WALK".equals(mode); }
     }
 
+    /**
+     * What the trip costs. ETS publishes GTFS Fares V2, so this already accounts
+     * for transfer rules -- three buses inside the transfer window is one fare.
+     */
+    public static class TransitFare {
+        public double amount;
+        public String currency;      // "CAD"
+        public String medium;        // "Arc", "Cash", "cEMV" -- the cheapest one
+        public String text;          // "CAD 3.00 (Arc)", ready to display
+    }
+
     /** A live service alert riding along with an itinerary. */
     public static class TransitAlert {
         public String header;
@@ -137,6 +148,7 @@ public class ApiModels {
         public boolean realtime;                      // any ride leg had live data
         public String status;                         // first live punctuality, if any
         public java.util.List<TransitAlert> alerts;   // de-duplicated across legs
+        public TransitFare fare;                      // null if the feed prices nothing
         public java.util.List<TransitLeg> legs;
         public java.util.List<String> instructions;   // ready-made lines for the list
     }

@@ -103,6 +103,25 @@
                     style="?android:attr/borderlessButtonStyle" />
             </LinearLayout>
 
+            <!-- Transit-only controls. Hidden in drive/walk mode, where "arrive by"
+                 and step-free routing have nothing to act on. -->
+            <LinearLayout
+                android:id="@+id/transitOptionsRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:visibility="gone"
+                android:layout_marginTop="4dp">
+                <Button android:id="@+id/whenBtn" android:layout_width="0dp" android:layout_weight="1"
+                    android:layout_height="wrap_content" android:layout_marginEnd="6dp"
+                    android:text="@string/transit_leave_now" android:textSize="12sp"
+                    style="?android:attr/borderlessButtonStyle" />
+                <Button android:id="@+id/accessBtn" android:layout_width="0dp" android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:text="@string/transit_step_free" android:textSize="12sp"
+                    style="?android:attr/borderlessButtonStyle" />
+            </LinearLayout>
+
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

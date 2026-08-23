@@ -180,6 +180,9 @@ def cmd_build(_a):
     build = _stage("otp-build", [
         (GTFS_ZIP, "gtfs.zip"),
         (osm, "edmonton.osm.pbf"),
+        # otp-config.json carries the feature flags. FaresV2 is baked into the
+        # graph, so it has to be present at build time, not just at serve time.
+        (os.path.join(CONFIG, "otp-config.json"), "otp-config.json"),
         (os.path.join(CONFIG, "build-config.json"), "build-config.json"),
         (os.path.join(CONFIG, "router-config.json"), "router-config.json"),
     ])
@@ -195,6 +198,7 @@ def cmd_serve(a):
         raise SystemExit("no graph.obj — run `python otp.py build` first")
     serve = _stage("otp-serve", [
         (GRAPH, "graph.obj"),
+        (os.path.join(CONFIG, "otp-config.json"), "otp-config.json"),
         (os.path.join(CONFIG, "router-config.json"), "router-config.json"),
     ])
     print("Serving OTP on http://localhost:%d  (GraphQL at /otp/gtfs/v1)" % a.port)

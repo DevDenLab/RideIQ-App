@@ -131,6 +131,14 @@ public class RouteMapActivity extends AppCompatActivity {
     private final List<Polyline> transitLines = new ArrayList<>();
     private final List<Marker> transitStops = new ArrayList<>();
 
+    // Transit query options. "now" means leave now; otherwise an ISO local time,
+    // which transitArriveBy turns from "leave at" into "be there by".
+    private String transitWhen = "now";
+    private boolean transitArriveBy = false;
+    private boolean wheelchair = false;
+    private LinearLayout transitOptionsRow;
+    private Button whenBtn, accessBtn;
+
     /** Fallback colours for routes whose agency publishes no route_color. */
     private static final String[] LEG_COLORS = {"#1E6FEB", "#E65100", "#6A1B9A", "#00838F"};
     private static final int WALK_LEG = Color.parseColor("#757575");
@@ -206,6 +214,11 @@ public class RouteMapActivity extends AppCompatActivity {
         driveBtn.setOnClickListener(v -> setMode("drive"));
         walkBtn.setOnClickListener(v -> setMode("walk"));
         transitModeBtn.setOnClickListener(v -> setMode("transit"));
+        transitOptionsRow = findViewById(R.id.transitOptionsRow);
+        whenBtn = findViewById(R.id.whenBtn);
+        accessBtn = findViewById(R.id.accessBtn);
+        whenBtn.setOnClickListener(v -> pickTransitTime());
+        accessBtn.setOnClickListener(v -> toggleWheelchair());
         updateModePills();
         NavBar.setup(this, (BottomNavigationView) findViewById(R.id.bottomNav), R.id.nav_map);
 
@@ -268,6 +281,65 @@ public class RouteMapActivity extends AppCompatActivity {
         stylePill(driveBtn, "drive".equals(travelMode));
         stylePill(walkBtn, "walk".equals(travelMode));
         stylePill(transitModeBtn, "transit".equals(travelMode));
+        boolean transit = "transit".equals(travelMode);
+        if (transitOptionsRow != null) {
+            transitOptionsRow.setVisibility(transit ? View.VISIBLE : View.GONE);
+            stylePill(whenBtn, !"now".equals(transitWhen));
+            stylePill(accessBtn, wheelchair);
+        }
+    }
+
+    /**
+     * "Leave now", "Depart at…", or "Arrive by…". Arrive-by is the one that earns
+     * its keep for transit: it walks the whole plan backwards from when you have
+     * to be somewhere, which is how people actually think about catching a bus.
+     */
+    private void pickTransitTime() {
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("When?")
+                .setItems(new String[]{"Leave now", "Depart at…", "Arrive by…"}, (d, which) -> {
+                    if (which == 0) {
+                        transitWhen = "now";
+                        transitArriveBy = false;
+                        whenBtn.setText(R.string.transit_leave_now);
+                        updateModePills();
+                        if (pickupMarker != null && dropoffMarker != null) routeTransit();
+                        return;
+                    }
+                    askForClock(which == 2);
+                })
+                .show();
+    }
+
+    private void askForClock(boolean arriveBy) {
+        java.util.Calendar now = java.util.Calendar.getInstance();
+        new android.app.TimePickerDialog(this, (view, hour, minute) -> {
+            java.util.Calendar when = java.util.Calendar.getInstance();
+            when.set(java.util.Calendar.HOUR_OF_DAY, hour);
+            when.set(java.util.Calendar.MINUTE, minute);
+            when.set(java.util.Calendar.SECOND, 0);
+            // A time already past today means tomorrow -- otherwise asking for
+            // "arrive by 8am" in the afternoon silently returns nothing.
+            if (when.getTimeInMillis() < System.currentTimeMillis())
+                when.add(java.util.Calendar.DAY_OF_MONTH, 1);
+            transitWhen = new java.text.SimpleDateFormat(
+                    "yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(when.getTime());
+            transitArriveBy = arriveBy;
+            whenBtn.setText(String.format(Locale.US, "%s %02d:%02d",
+                    arriveBy ? "Arrive by" : "Depart", hour, minute));
+            updateModePills();
+            if (pickupMarker != null && dropoffMarker != null) routeTransit();
+        }, now.get(java.util.Calendar.HOUR_OF_DAY), now.get(java.util.Calendar.MINUTE), true).show();
+    }
+
+    /** Step-free routing: OTP drops stops and vehicles the feed marks inaccessible. */
+    private void toggleWheelchair() {
+        wheelchair = !wheelchair;
+        updateModePills();
+        Toast.makeText(this, wheelchair ? "Step-free routing on" : "Step-free routing off",
+                Toast.LENGTH_SHORT).show();
+        if (pickupMarker != null && dropoffMarker != null && "transit".equals(travelMode))
+            routeTransit();
     }
 
     private void stylePill(Button b, boolean selected) {
@@ -536,7 +608,8 @@ public class RouteMapActivity extends AppCompatActivity {
         progress.setVisibility(View.VISIBLE);
         info.setText("Finding transit…");
         ApiClient.get().transit(a.getLatitude(), a.getLongitude(),
-                        b.getLatitude(), b.getLongitude(), 1200, 3)
+                        b.getLatitude(), b.getLongitude(), 1200, 3,
+                        transitWhen, transitArriveBy, wheelchair)
                 .enqueue(new Callback<ApiModels.TransitResponse>() {
                     @Override public void onResponse(@NonNull Call<ApiModels.TransitResponse> c,
                                                      @NonNull Response<ApiModels.TransitResponse> r) {
@@ -622,8 +695,12 @@ public class RouteMapActivity extends AppCompatActivity {
             card.addView(dur);
 
             TextView sub = new TextView(this);
-            sub.setText(it.transfers == 0 ? "No transfers"
-                    : it.transfers + (it.transfers == 1 ? " transfer" : " transfers"));
+            String transfers = it.transfers == 0 ? "No transfers"
+                    : it.transfers + (it.transfers == 1 ? " transfer" : " transfers");
+            // The fare already accounts for transfer rules, so three buses inside
+            // the transfer window shows one fare, not three.
+            sub.setText(it.fare == null ? transfers
+                    : String.format(Locale.US, "%s · $%.2f", transfers, it.fare.amount));
             sub.setTextSize(12);
             sub.setTextColor(Color.parseColor("#666666"));
             card.addView(sub);
@@ -710,6 +787,8 @@ public class RouteMapActivity extends AppCompatActivity {
                 routeSummary(it), it.durationMin, it.departTime, it.arriveTime,
                 it.transfers == 0 ? "no transfers"
                         : it.transfers + (it.transfers == 1 ? " transfer" : " transfers")));
+        if (it.fare != null)
+            head.append(String.format(Locale.US, "  ·  $%.2f %s", it.fare.amount, it.fare.medium));
         if (it.realtime && it.status != null) head.append("  ·  ● live, ").append(it.status);
         // Surface at most one alert here; the rest are on the Steps screen. A wall
         // of detour notices on the map panel buries the plan itself.
@@ -1117,9 +1196,10 @@ public class RouteMapActivity extends AppCompatActivity {
             DirectionsActivity.LINES = it.instructions;
             DirectionsActivity.ALERTS = it.alerts;
             DirectionsActivity.SUMMARY = String.format(Locale.US,
-                    "%s\n%d min · depart %s, arrive %s · %.0f m walking",
+                    "%s\n%d min · depart %s, arrive %s · %.0f m walking%s",
                     routeSummary(it), it.durationMin, it.departTime, it.arriveTime,
-                    it.walkDistanceM);
+                    it.walkDistanceM,
+                    it.fare == null ? "" : "  ·  " + it.fare.text);
             startActivity(new android.content.Intent(this, DirectionsActivity.class));
             return;
         }

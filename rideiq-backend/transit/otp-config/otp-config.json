@@ -1,0 +1,14 @@
+// OTP feature toggles. Separate from build-config.json and router-config.json
+// because these switch whole subsystems on, not settings within them.
+{
+  "otpFeatures": {
+    // The ETS feed ships full GTFS Fares V2 -- fare_products, fare_leg_rules,
+    // fare_media, fare_transfer_rules, areas, stop_areas. Without this flag OTP
+    // ignores all of it and every leg comes back with an empty fareProducts list,
+    // which reads exactly like "this trip is free" rather than "we did not look".
+    //
+    // This is a BUILD-time flag: the fare rules are baked into graph.obj, so
+    // turning it on means rebuilding the graph, not just restarting the server.
+    "FaresV2": true
+  }
+}

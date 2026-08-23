@@ -35,6 +35,8 @@
     <string name="seg_drive">🚗 Drive</string>
     <string name="seg_walk">🚶 Walk</string>
     <string name="seg_transit">🚍 Transit</string>
+    <string name="transit_leave_now">🕓 Leave now</string>
+    <string name="transit_step_free">♿ Step-free</string>
     <string name="directions_btn">Steps</string>
     <string name="street_view_btn">Street view</string>
     <!-- Fallback handoff to Google Maps, kept for when our own engine is down. -->

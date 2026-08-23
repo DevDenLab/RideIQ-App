@@ -61,5 +61,11 @@ public interface ApiService {
                                             @Query("lat2") double lat2,
                                             @Query("lon2") double lon2,
                                             @Query("max_walk_m") int maxWalkM,
-                                            @Query("want") int want);
+                                            @Query("want") int want,
+                                            // "now", or an ISO local time
+                                            @Query("depart") String depart,
+                                            // true = the time above is when you must
+                                            // ARRIVE, and the plan is walked backwards
+                                            @Query("arrive_by") boolean arriveBy,
+                                            @Query("wheelchair") boolean wheelchair);
 }

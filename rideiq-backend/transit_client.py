@@ -111,6 +111,15 @@ query Plan($from: InputCoordinates!, $to: InputCoordinates!, $date: String!,
         trip { tripHeadsign }
         legGeometry { points }
         alerts { alertHeaderText alertDescriptionText alertSeverityLevel alertEffect }
+        fareProducts {
+          id
+          product {
+            name
+            medium { name }
+            riderCategory { name }
+            ... on DefaultFareProduct { price { amount currency { code } } }
+          }
+        }
       }
     }
   }
@@ -198,6 +207,55 @@ def _alerts(raw_alerts):
                     "severity": a.get("alertSeverityLevel"),
                     "effect": a.get("alertEffect")})
     return out
+
+
+# ── fares (GTFS Fares V2) ──────────────────────────────────────────────────
+def _fare(legs_raw):
+    """What the trip actually costs, per payment method.
+
+    The subtlety is transfers. ETS publishes fare_transfer_rules, so riding three
+    buses inside the transfer window is one fare, not three. OTP expresses that by
+    giving every leg the same *fare product use id* when one purchase covers them
+    all -- so the total is a sum over distinct use ids, never over legs. Summing
+    per leg would overcharge exactly the trips transfers exist to protect.
+    """
+    by_medium, seen = {}, {}
+    for raw in legs_raw:
+        for use in raw.get("fareProducts") or []:
+            product = use.get("product") or {}
+            price = product.get("price") or {}
+            amount = price.get("amount")
+            if amount is None:
+                continue
+            medium = ((product.get("medium") or {}).get("name")
+                      or product.get("name") or "Fare")
+            key = (medium, use.get("id"))
+            if key in seen:
+                continue                      # already paid for by an earlier leg
+            seen[key] = True
+            entry = by_medium.setdefault(medium, {
+                "medium": medium,
+                "name": product.get("name") or medium,
+                "amount": 0.0,
+                "currency": (price.get("currency") or {}).get("code") or "CAD",
+                "rider_category": (product.get("riderCategory") or {}).get("name"),
+            })
+            entry["amount"] += float(amount)
+
+    options = sorted(by_medium.values(), key=lambda o: o["amount"])
+    for o in options:
+        o["amount"] = round(o["amount"], 2)
+    if not options:
+        return None
+    cheapest = options[0]
+    return {
+        "amount": cheapest["amount"],
+        "currency": cheapest["currency"],
+        "medium": cheapest["medium"],
+        "text": "%s %.2f (%s)" % (cheapest["currency"], cheapest["amount"],
+                                  cheapest["medium"]),
+        "options": options,
+    }
 
 
 # ── normalisation ──────────────────────────────────────────────────────────
@@ -298,6 +356,7 @@ def _itinerary(raw, tz):
         "realtime": any(l.get("realtime") for l in rides),
         "status": next((l["status"] for l in rides if l.get("status")), None),
         "alerts": alerts,
+        "fare": _fare(raw["legs"]),
         "legs": legs,
         "instructions": _instructions(legs),
     }

@@ -92,6 +92,34 @@ dressed up as a fact.
 If OTP runs somewhere with no outbound internet, the updaters log fetch errors and
 the engine keeps serving the timetable. Realtime degrades; routing does not break.
 
+## Fares, accessibility, arrive-by
+
+`GET /transit` takes `depart` (`now`, an ISO local time, or `+15m`), `arrive_by`,
+`wheelchair`, `max_walk_m` and `want`.
+
+**Fares** come from GTFS Fares V2, which the ETS feed publishes in full
+(`fare_products`, `fare_leg_rules`, `fare_transfer_rules`, `areas`, `stop_areas`).
+Two things about this are easy to get wrong:
+
+- It needs the `FaresV2` feature flag in [otp-config.json](otp-config/otp-config.json),
+  and that flag is **build-time** — the rules are baked into `graph.obj`. Without it
+  every leg comes back with an empty fare list, which reads exactly like "this trip
+  is free" rather than "we never looked".
+- The total is a sum over **distinct fare-product use ids, not over legs**. ETS's
+  transfer rules mean three buses inside the transfer window is one $3.00 fare;
+  summing per leg would charge $9.00 and overcharge precisely the trips that
+  transfer rules exist to protect. Verified: a 3-bus, 2-transfer trip prices at one
+  fare.
+
+The response gives the cheapest medium plus the alternatives — Edmonton prices Arc
+and contactless at $3.00 and cash at $3.75.
+
+**`arrive_by`** walks the whole plan backwards from when you have to be somewhere.
+Asking to arrive by 09:00 returns departures around 07:33, which is how people
+actually think about catching a bus.
+
+**`wheelchair`** asks OTP to drop stops and vehicles the feed marks inaccessible.
+
 ## Deploying it
 
 Two GitHub Actions workflows, deliberately separate from the app's deploy:

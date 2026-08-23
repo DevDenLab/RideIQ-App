@@ -1,0 +1,267 @@
+"""
+transit_client.py — talk to OpenTripPlanner and hand back RideIQ-shaped legs.
+
+TRANSIT_PLAN.md Phase 2. OTP owns the hard part (RAPTOR over the ETS timetable);
+this module owns the translation, so the Android app never learns what OTP is:
+
+    app  ->  FastAPI /transit  ->  this module  ->  OTP GraphQL /otp/gtfs/v1
+
+OTP's itinerary is verbose and epoch-millis-flavoured. The app already knows how
+to draw a `polyline_latlon` and list steps, so we flatten each OTP leg into the
+same vocabulary the driving routes use, and add only what transit genuinely needs:
+which route you board, its headsign, and the clock times.
+
+Set OTP_URL to point at the engine (default http://localhost:8081, which is what
+`transit/otp.py serve` gives you).
+"""
+import json
+import os
+import urllib.error
+import urllib.request
+from datetime import datetime, timedelta
+
+OTP_URL = os.environ.get("OTP_URL", "http://localhost:8081").rstrip("/")
+OTP_TIMEOUT = float(os.environ.get("OTP_TIMEOUT", "20"))
+# Every agency in the ETS feed publishes America/Edmonton, and OTP interprets the
+# date/time we send in the feed's own zone — so we must build it in that zone too,
+# not in whatever the server host happens to be set to.
+TZ_NAME = os.environ.get("TRANSIT_TZ", "America/Edmonton")
+
+# Modes OTP reports that mean "you are riding something", vs. walking to it.
+RIDE_MODES = {"BUS", "TRAM", "SUBWAY", "RAIL", "FERRY", "CABLE_CAR",
+              "GONDOLA", "FUNICULAR", "TROLLEYBUS", "MONORAIL", "COACH"}
+
+# What a rider calls the thing. ETS tags the Capital/Metro/Valley lines as TRAM
+# in GTFS, but nobody in Edmonton boards a "tram" — they board the LRT.
+MODE_LABEL = {"BUS": "Bus", "TRAM": "LRT", "SUBWAY": "LRT", "RAIL": "Train",
+              "FERRY": "Ferry", "COACH": "Coach", "TROLLEYBUS": "Trolleybus",
+              "WALK": "Walk"}
+
+
+class TransitUnavailable(RuntimeError):
+    """OTP is not reachable — the caller should degrade, not 500."""
+
+
+def _tz():
+    try:
+        from zoneinfo import ZoneInfo
+        return ZoneInfo(TZ_NAME)
+    except Exception:
+        # No tzdata on the host: fall back to the server clock. Times stay
+        # self-consistent, they just may not be Edmonton's.
+        return None
+
+
+# ── encoded polyline ────────────────────────────────────────────────────────
+def decode_polyline(encoded, precision=5):
+    """Google/OTP encoded polyline -> [[lat, lon], ...]."""
+    coords, index, lat, lon = [], 0, 0, 0
+    factor = float(10 ** precision)
+    n = len(encoded)
+    while index < n:
+        for axis in range(2):
+            shift, result = 0, 0
+            while True:
+                b = ord(encoded[index]) - 63
+                index += 1
+                result |= (b & 0x1F) << shift
+                shift += 5
+                if b < 0x20:
+                    break
+            delta = ~(result >> 1) if result & 1 else (result >> 1)
+            if axis == 0:
+                lat += delta
+            else:
+                lon += delta
+        coords.append([round(lat / factor, 6), round(lon / factor, 6)])
+    return coords
+
+
+# ── GraphQL ────────────────────────────────────────────────────────────────
+PLAN_QUERY = """
+query Plan($from: InputCoordinates!, $to: InputCoordinates!, $date: String!,
+           $time: String!, $arriveBy: Boolean!, $n: Int!, $wheelchair: Boolean!,
+           $walkReluctance: Float!) {
+  plan(from: $from, to: $to, date: $date, time: $time, arriveBy: $arriveBy,
+       numItineraries: $n, wheelchair: $wheelchair, walkReluctance: $walkReluctance,
+       transportModes: [{mode: WALK}, {mode: TRANSIT}]) {
+    itineraries {
+      duration
+      startTime
+      endTime
+      walkDistance
+      legs {
+        mode
+        duration
+        distance
+        startTime
+        endTime
+        realTime
+        headsign
+        from { name lat lon stop { code platformCode } }
+        to { name lat lon stop { code platformCode } }
+        route { shortName longName mode color textColor }
+        trip { tripHeadsign }
+        legGeometry { points }
+      }
+    }
+  }
+}
+"""
+
+
+def _post(query, variables):
+    body = json.dumps({"query": query, "variables": variables}).encode()
+    req = urllib.request.Request(OTP_URL + "/otp/gtfs/v1", body,
+                                 {"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=OTP_TIMEOUT) as r:
+            data = json.loads(r.read())
+    except urllib.error.URLError as e:
+        raise TransitUnavailable("OTP at %s is not answering (%s)" % (OTP_URL, e))
+    if data.get("errors"):
+        raise RuntimeError(data["errors"][0].get("message", "OTP rejected the query"))
+    return data["data"]
+
+
+def health():
+    """Cheap reachability probe for /health, so ops can see OTP separately."""
+    try:
+        req = urllib.request.Request(OTP_URL + "/otp/gtfs/v1",
+                                     json.dumps({"query": "{feeds{feedId}}"}).encode(),
+                                     {"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=3) as r:
+            feeds = json.loads(r.read()).get("data", {}).get("feeds") or []
+        return {"ok": True, "url": OTP_URL, "feeds": [f["feedId"] for f in feeds]}
+    except Exception as e:
+        return {"ok": False, "url": OTP_URL, "error": str(e)}
+
+
+# ── normalisation ──────────────────────────────────────────────────────────
+def _clock(ms, tz):
+    dt = datetime.fromtimestamp(ms / 1000.0, tz)
+    return dt.strftime("%H:%M"), dt.isoformat(timespec="seconds")
+
+
+def _leg(raw, tz):
+    route = raw.get("route") or {}
+    trip = raw.get("trip") or {}
+    geom = (raw.get("legGeometry") or {}).get("points") or ""
+    depart_hm, depart_iso = _clock(raw["startTime"], tz)
+    arrive_hm, arrive_iso = _clock(raw["endTime"], tz)
+    leg = {
+        "mode": raw["mode"],
+        "from": (raw.get("from") or {}).get("name") or "Start",
+        "to": (raw.get("to") or {}).get("name") or "Destination",
+        "distance_m": round(raw.get("distance") or 0),
+        "duration_min": round((raw.get("duration") or 0) / 60),
+        "depart": depart_hm,
+        "arrive": arrive_hm,
+        "depart_iso": depart_iso,
+        "arrive_iso": arrive_iso,
+        "polyline_latlon": decode_polyline(geom) if geom else [],
+    }
+    if raw["mode"] in RIDE_MODES:
+        leg["mode_label"] = MODE_LABEL.get(raw["mode"], raw["mode"].title())
+        leg["route"] = route.get("shortName") or route.get("longName") or ""
+        leg["route_name"] = route.get("longName") or ""
+        leg["headsign"] = trip.get("tripHeadsign") or raw.get("headsign") or ""
+        # ETS mostly leaves route_color empty for buses and sets it for LRT; the
+        # app falls back to its own palette when this is None.
+        leg["color"] = ("#" + route["color"]) if route.get("color") else None
+        leg["realtime"] = bool(raw.get("realTime"))
+        for end in ("from", "to"):
+            stop = (raw.get(end) or {}).get("stop") or {}
+            code = stop.get("code") or stop.get("platformCode")
+            if code:
+                leg[end + "_stop_code"] = code
+    return leg
+
+
+def _instructions(legs):
+    """The leg-by-leg text the app's existing directions list renders."""
+    out = []
+    for leg in legs:
+        if leg["mode"] == "WALK":
+            out.append("Walk %d min (%d m) to %s"
+                       % (leg["duration_min"], leg["distance_m"], leg["to"]))
+        else:
+            head = (" toward " + leg["headsign"]) if leg.get("headsign") else ""
+            out.append("Board %s %s%s at %s, %s — ride %d min, get off at %s"
+                       % (leg.get("mode_label", leg["mode"]), leg.get("route", ""), head,
+                          leg["from"], leg["depart"], leg["duration_min"], leg["to"]))
+    if out:
+        out.append("You have arrived at your destination")
+    return out
+
+
+def _itinerary(raw, tz):
+    legs = [_leg(l, tz) for l in raw["legs"]]
+    rides = [l for l in legs if l["mode"] in RIDE_MODES]
+    depart_hm, depart_iso = _clock(raw["startTime"], tz)
+    arrive_hm, arrive_iso = _clock(raw["endTime"], tz)
+    return {
+        "duration_min": round(raw["duration"] / 60),
+        "depart": depart_iso,
+        "arrive": arrive_iso,
+        "depart_time": depart_hm,
+        "arrive_time": arrive_hm,
+        # Transfers are boardings minus one; a walk-only plan has no transfers.
+        "transfers": max(0, len(rides) - 1),
+        "walk_distance_m": round(raw.get("walkDistance") or 0),
+        "routes": [l.get("route") for l in rides if l.get("route")],
+        "legs": legs,
+        "instructions": _instructions(legs),
+    }
+
+
+def _walk_metres(itin):
+    return max([l["distance_m"] for l in itin["legs"] if l["mode"] == "WALK"] or [0])
+
+
+def plan(lat1, lon1, lat2, lon2, depart="now", arrive_by=False,
+         max_walk_m=800, wheelchair=False, want=3):
+    """Plan a transit trip and return itineraries in RideIQ's leg format."""
+    tz = _tz()
+    when = datetime.now(tz) if depart in (None, "", "now") else _parse_when(depart, tz)
+
+    # OTP 2 dropped the hard maxWalkDistance knob; walkReluctance is the supported
+    # lever. Nudge it up when the caller wants a short walk so OTP prefers plans
+    # that ride further, then filter what still comes back too long.
+    reluctance = 2.0 if max_walk_m >= 800 else 4.0
+
+    data = _post(PLAN_QUERY, {
+        "from": {"lat": lat1, "lon": lon1},
+        "to": {"lat": lat2, "lon": lon2},
+        "date": when.strftime("%Y-%m-%d"),
+        "time": when.strftime("%H:%M:%S"),
+        "arriveBy": bool(arrive_by),
+        "n": max(1, int(want)),
+        "wheelchair": bool(wheelchair),
+        "walkReluctance": reluctance,
+    })
+    raw = (data.get("plan") or {}).get("itineraries") or []
+    itineraries = [_itinerary(i, tz) for i in raw]
+
+    # Keep the walk cap honest, but never answer "no route" purely because every
+    # option walks 50 m too far — return the least-walking one instead.
+    within = [i for i in itineraries if _walk_metres(i) <= max_walk_m]
+    if itineraries and not within:
+        within = [min(itineraries, key=_walk_metres)]
+    return {
+        "itineraries": within,
+        "query": {"depart": when.isoformat(timespec="seconds"),
+                  "arrive_by": bool(arrive_by), "max_walk_m": max_walk_m,
+                  "wheelchair": bool(wheelchair)},
+    }
+
+
+def _parse_when(value, tz):
+    """Accept an ISO timestamp, or a relative '+15m' for 'in a quarter hour'."""
+    value = value.strip()
+    if value.startswith("+") and value[-1] in "mh":
+        n = float(value[1:-1])
+        return datetime.now(tz) + timedelta(hours=n if value[-1] == "h" else 0,
+                                            minutes=0 if value[-1] == "h" else n)
+    dt = datetime.fromisoformat(value)
+    return dt if dt.tzinfo else dt.replace(tzinfo=tz)

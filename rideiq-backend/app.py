@@ -27,6 +27,7 @@ from pydantic import BaseModel
 
 import models as M
 import routing as R
+import transit_client as T
 
 DB_PATH = os.environ.get("DB_PATH", os.path.join(os.path.dirname(__file__), "rideiq.db"))
 REDIS_URL = os.environ.get("REDIS_URL")
@@ -53,9 +54,9 @@ def cache_get(k):
     return _local.get(k)
 
 
-def cache_set(k, v):
+def cache_set(k, v, ttl=None):
     if _redis:
-        _redis.setex(k, CACHE_TTL, json.dumps(v))
+        _redis.setex(k, ttl or CACHE_TTL, json.dumps(v))
     else:
         _local[k] = v
         if len(_local) > 200:
@@ -308,6 +309,62 @@ def route_latlon(i: RouteLatLonIn):
     primary = _price_route(routes[0], i)
     primary["alternatives"] = [_price_route(r, i) for r in routes[1:]]
     return primary
+
+
+# ---- public transit (OpenTripPlanner behind us; see transit/README.md) ----
+# A "leave now" plan goes stale as the next bus gets closer, so transit answers
+# get a much shorter TTL than the hour we give analytics.
+TRANSIT_TTL = int(os.environ.get("TRANSIT_CACHE_TTL", "120"))
+TRANSIT_BUCKET_S = 300           # round the query clock to 5 min so repeats hit
+
+
+@app.get("/transit")
+def transit(lat1: float, lon1: float, lat2: float, lon2: float,
+            depart: str = "now", arrive_by: bool = False,
+            max_walk_m: int = 800, wheelchair: bool = False, want: int = 3):
+    """Plan a public-transit trip: walk legs, which route to ride, and the clock.
+
+    Unlike /route-latlon this is time-dependent — the answer depends on when you
+    ask, because you have to catch the bus. OpenTripPlanner does the routing over
+    Edmonton's GTFS feed; we normalize its itineraries into RideIQ legs.
+    """
+    METRICS["requests"] += 1
+    # Bucket "now" so two riders asking the same trip seconds apart share a result.
+    stamp = (int(time.time()) // TRANSIT_BUCKET_S) if depart == "now" else depart
+    key = "tr:%.5f,%.5f,%.5f,%.5f,%s,%s,%d,%s,%d" % (
+        lat1, lon1, lat2, lon2, stamp, arrive_by, max_walk_m, wheelchair, want)
+    hit = cache_get(key)
+    if hit:
+        METRICS["cache_hits"] += 1
+        return {**hit, "cached": True, "instance": INSTANCE}
+
+    try:
+        out = T.plan(lat1, lon1, lat2, lon2, depart=depart, arrive_by=arrive_by,
+                     max_walk_m=max_walk_m, wheelchair=wheelchair, want=want)
+    except T.TransitUnavailable as e:
+        # The engine is a separate service; if it is down that is a 503, not a
+        # broken request, and the app should fall back rather than show an error.
+        raise HTTPException(503, str(e))
+    except ValueError as e:
+        raise HTTPException(400, "bad depart time: %s" % e)
+    except RuntimeError as e:
+        raise HTTPException(502, str(e))
+
+    if not out["itineraries"]:
+        raise HTTPException(404, "no transit itinerary — the trip may be outside "
+                                 "the service area, or outside service hours")
+    cache_set(key, out, ttl=TRANSIT_TTL)
+    return {**out, "cached": False, "instance": INSTANCE}
+
+
+@app.get("/transit/status")
+def transit_status():
+    """Is the transit engine reachable, and which feeds did it load?
+
+    Kept off /health on purpose: /health has to stay fast for the load balancer,
+    and this one talks to another service over the network.
+    """
+    return {**T.health(), "instance": INSTANCE}
 
 
 @app.post("/quote")

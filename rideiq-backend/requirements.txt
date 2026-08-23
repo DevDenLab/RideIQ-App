@@ -11,3 +11,7 @@ fastapi>=0.111,<0.113
 uvicorn[standard]>=0.30
 pydantic>=2.7
 redis>=5.0
+
+# Transit itineraries are timestamped in America/Edmonton. python:3.11-slim ships
+# without a system tz database, so zoneinfo needs this to resolve the zone at all.
+tzdata>=2024.1

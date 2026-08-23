@@ -6,3 +6,8 @@ __pycache__/
 # Live DB lives on the mounted volume (/data), not in the image.
 rideiq.db
 .git/
+
+# The transit engine's working data is ~700 MB of downloaded GTFS/OSM/JDK/graph.
+# It belongs to the OTP container, not this image -- and it would otherwise be
+# uploaded to the docker daemon as build context on every single build.
+transit/data/

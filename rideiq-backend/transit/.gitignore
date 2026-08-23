@@ -1,0 +1,9 @@
+# Phase 1 working data: all of it is downloaded or generated, none of it belongs in git.
+#   gtfs.zip                ~22 MB   ETS schedules (refreshed every few weeks)
+#   alberta-latest.osm.pbf ~350 MB   Geofabrik provincial extract
+#   edmonton.osm.pbf        ~40 MB   bbox clip of the above
+#   otp-shaded-*.jar       ~200 MB   OpenTripPlanner engine
+#   graph.obj              ~500 MB   the built transit+street graph
+data/
+__pycache__/
+*.pyc

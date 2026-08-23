@@ -1,0 +1,70 @@
+# RideIQ Transit Engine (OpenTripPlanner)
+
+Phase 1 of [TRANSIT_PLAN.md](../../TRANSIT_PLAN.md): a real public-transit router for
+Edmonton, running locally, on free open data and no API key.
+
+## Why a separate engine
+
+The A\* in [routing.py](../routing.py) searches a graph whose edge weights never change.
+Transit is *time-dependent* — you have to reach the stop before the bus leaves, and
+after that the timetable, not the geometry, decides where you can be and when. That is a
+different algorithm (RAPTOR), and OpenTripPlanner already implements it over GTFS plus
+the walk-to-stop stitching. We run OTP and translate its answer instead of writing our own.
+
+## What the data is
+
+| Input | Source | Size | Licence |
+|---|---|---|---|
+| `gtfs.zip` | City of Edmonton, `gtfs.edmonton.ca/TMGTFSRealTimeWebService/GTFS/gtfs.zip` | ~22 MB | Open data, no key |
+| `alberta-latest.osm.pbf` | Geofabrik | ~350 MB | ODbL |
+| `edmonton.osm.pbf` | clipped from the above by `clip_osm.py` | ~40 MB | ODbL |
+| `otp-shaded-2.9.0.jar` | OpenTripPlanner GitHub releases | ~183 MB | LGPL |
+| `graph.obj` | built from GTFS + OSM | ~hundreds of MB | — |
+
+The ETS feed covers **7 agencies**, not just Edmonton: ETS, St. Albert, Strathcona County,
+Spruce Grove, Fort Saskatchewan, Beaumont, and Leduc — about 6,800 stops across the metro.
+`clip_osm.py` derives its bounding box from the feed's own stop extent, so the street
+extract automatically covers wherever those agencies actually run.
+
+None of this is committed — see [.gitignore](.gitignore). It is all reproducible from
+`python otp.py fetch`.
+
+## Running it
+
+```bash
+pip install osmium          # only needed for the clip step
+python otp.py all           # fetch + clip + build  (downloads ~550 MB, takes a while)
+python otp.py serve         # http://localhost:8081
+```
+
+Then, in a second shell:
+
+```bash
+python otp.py plan
+```
+
+which asks for a downtown → University of Alberta trip and prints the itineraries. If you
+get legs back with real route numbers, Phase 1 is done.
+
+Individual steps are available too: `fetch`, `clip`, `build`, `serve`, `plan`.
+
+## Requirements
+
+- **Java 21+** — OTP 2.9 will not start on anything older.
+- **RAM** — the build wants a large heap. The default is `-Xmx6G`; override with
+  `OTP_HEAP=4G` if your machine is tighter, but the build gets slower and can fail
+  outright below about 4 GB.
+- **Port 8081** — override with `OTP_PORT`, or `--port` on any subcommand.
+
+## Talking to it
+
+OTP 2.9 serves a GraphQL API at `/otp/gtfs/v1` (the old REST `plan` endpoint is gone).
+There is a query browser at `http://localhost:8081/graphiql` for poking at it by hand.
+`otp.py plan` shows the minimal query shape that Phase 2's `/transit` endpoint builds on.
+
+## Keeping schedules current
+
+`feed_info.txt` in the ETS feed carries `feed_start_date` / `feed_end_date` — usually a
+window of a few weeks. Once the graph is past `feed_end_date`, OTP returns no itineraries
+at all rather than wrong ones. Re-run `fetch` + `build` before then; Phase 3 automates
+this as a scheduled GitHub Actions job.

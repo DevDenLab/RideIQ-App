@@ -1,0 +1,17 @@
+{
+  "_comment": [
+    "OpenTripPlanner graph-build settings for RideIQ (TRANSIT_PLAN.md Phase 1).",
+    "OTP scans its build directory for inputs, so it picks up gtfs.zip and",
+    "edmonton.osm.pbf without either being named here.",
+    "transitServiceStart/End bound how much of the timetable is loaded: the ETS",
+    "feed only covers a few weeks, and a narrower window is a smaller graph."
+  ],
+  "transitServiceStart": "-P1D",
+  "transitServiceEnd": "P1Y",
+  "areaVisibility": true,
+  "platformEntriesLinking": true,
+  "staticParkAndRide": true,
+  "staticBikeParkAndRide": false,
+  "maxTransferDuration": "30m",
+  "subwayAccessTime": 2.0
+}

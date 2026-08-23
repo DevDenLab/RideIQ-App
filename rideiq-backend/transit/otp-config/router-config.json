@@ -1,0 +1,16 @@
+{
+  "_comment": [
+    "Runtime routing defaults for RideIQ's transit engine.",
+    "walkSpeed 1.33 m/s is OTP's average-adult default and roughly matches the",
+    "walking speed our own walk_graph routing already assumes, so a walk leg",
+    "costed by OTP and one costed by routing.py do not disagree with each other.",
+    "transferSlack is the buffer a rider needs between alighting and boarding;",
+    "too small and the plan looks fast but is not catchable in real life."
+  ],
+  "routingDefaults": {
+    "walkSpeed": 1.33,
+    "transferSlack": "2m",
+    "numItineraries": 3,
+    "maxJourneyDuration": "3h"
+  }
+}

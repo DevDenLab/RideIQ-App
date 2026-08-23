@@ -94,8 +94,12 @@
                     android:text="@string/seg_drive" android:textSize="13sp"
                     style="?android:attr/borderlessButtonStyle" />
                 <Button android:id="@+id/walkBtn" android:layout_width="0dp" android:layout_weight="1"
-                    android:layout_height="wrap_content"
+                    android:layout_height="wrap_content" android:layout_marginEnd="6dp"
                     android:text="@string/seg_walk" android:textSize="13sp"
+                    style="?android:attr/borderlessButtonStyle" />
+                <Button android:id="@+id/transitModeBtn" android:layout_width="0dp" android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:text="@string/seg_transit" android:textSize="13sp"
                     style="?android:attr/borderlessButtonStyle" />
             </LinearLayout>
 
@@ -171,6 +175,22 @@
                     android:layout_height="wrap_content"
                     android:orientation="horizontal" />
             </HorizontalScrollView>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginBottom="6dp">
+                <Button android:id="@+id/directionsBtn" android:layout_width="0dp" android:layout_weight="1"
+                    android:layout_height="wrap_content" android:layout_marginEnd="4dp"
+                    android:text="@string/directions_btn" android:textSize="11sp" />
+                <Button android:id="@+id/streetViewBtn" android:layout_width="0dp" android:layout_weight="1"
+                    android:layout_height="wrap_content" android:layout_marginEnd="4dp"
+                    android:text="@string/street_view_btn" android:textSize="11sp" />
+                <Button android:id="@+id/transitBtn" android:layout_width="0dp" android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:text="@string/transit_btn" android:textSize="11sp" />
+            </LinearLayout>
 
             <LinearLayout
                 android:layout_width="match_parent"

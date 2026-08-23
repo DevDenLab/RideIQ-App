@@ -94,6 +94,44 @@ public class ApiModels {
         public java.util.List<ReverseGeocodeResponse> results;
     }
 
+    // ---- public transit (GET /transit -> OpenTripPlanner behind the backend) ----
+
+    /** One stage of a transit trip: a walk to a stop, or a ride on one route. */
+    public static class TransitLeg {
+        public String mode;              // WALK, BUS, TRAM (= LRT here), RAIL, ...
+        @SerializedName("mode_label") public String modeLabel;   // rider-facing: "Bus", "LRT"
+        @SerializedName("from") public String fromName;
+        @SerializedName("to") public String toName;
+        public String route;             // "8", "Capital" -- null on a walk leg
+        public String headsign;          // "toward Abbottsfield"
+        public String color;             // "#..." when the agency publishes one
+        public String depart;            // "17:48" local
+        public String arrive;            // "18:05" local
+        @SerializedName("distance_m") public double distanceM;
+        @SerializedName("duration_min") public int durationMin;
+        @SerializedName("polyline_latlon")
+        public java.util.List<java.util.List<Double>> polylineLatlon;
+
+        /** True when you are riding something rather than walking to it. */
+        public boolean isRide() { return mode != null && !"WALK".equals(mode); }
+    }
+
+    /** One complete door-to-door option: walk, ride, maybe transfer, walk. */
+    public static class Itinerary {
+        @SerializedName("duration_min") public int durationMin;
+        @SerializedName("depart_time") public String departTime;   // "17:42"
+        @SerializedName("arrive_time") public String arriveTime;   // "18:16"
+        public int transfers;
+        @SerializedName("walk_distance_m") public double walkDistanceM;
+        public java.util.List<String> routes;         // ["8", "Capital"] for the card
+        public java.util.List<TransitLeg> legs;
+        public java.util.List<String> instructions;   // ready-made lines for the list
+    }
+
+    public static class TransitResponse {
+        public java.util.List<Itinerary> itineraries;
+    }
+
     public static class RouteLatLonRequest {
         public double lat1, lon1, lat2, lon2;
         public int hour, weather;

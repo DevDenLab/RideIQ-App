@@ -34,6 +34,11 @@
     <string name="mode_walk">🚶 Walking</string>
     <string name="seg_drive">🚗 Drive</string>
     <string name="seg_walk">🚶 Walk</string>
+    <string name="seg_transit">🚍 Transit</string>
+    <string name="directions_btn">Steps</string>
+    <string name="street_view_btn">Street view</string>
+    <!-- Fallback handoff to Google Maps, kept for when our own engine is down. -->
+    <string name="transit_btn">Maps</string>
     <string name="menu_insights">Insights</string>
     <string name="nav_map">Map</string>
     <string name="nav_insights">Insights</string>

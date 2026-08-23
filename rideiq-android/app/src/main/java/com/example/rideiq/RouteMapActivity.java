@@ -114,8 +114,8 @@ public class RouteMapActivity extends AppCompatActivity {
     private Polyline routeLine, pickupConnector, dropoffConnector;
     private MyLocationNewOverlay myLocation;
     private boolean satellite = false;
-    private String travelMode = "drive";     // "drive" or "walk"
-    private Button driveBtn, walkBtn;
+    private String travelMode = "drive";     // "drive", "walk" or "transit"
+    private Button driveBtn, walkBtn, transitModeBtn;
 
     // route options (alternatives)
     private HorizontalScrollView optionsScroll;
@@ -123,6 +123,17 @@ public class RouteMapActivity extends AppCompatActivity {
     private List<ApiModels.RouteResponse> routeOptions = new ArrayList<>();
     private int selectedOption = 0;
     private String lastRouteLabel = "Route";
+
+    // transit itineraries. A transit trip is several legs in different modes, so it
+    // needs its own overlays rather than the single routeLine a car trip draws.
+    private List<ApiModels.Itinerary> transitOptions = new ArrayList<>();
+    private int selectedItinerary = 0;
+    private final List<Polyline> transitLines = new ArrayList<>();
+    private final List<Marker> transitStops = new ArrayList<>();
+
+    /** Fallback colours for routes whose agency publishes no route_color. */
+    private static final String[] LEG_COLORS = {"#1E6FEB", "#E65100", "#6A1B9A", "#00838F"};
+    private static final int WALK_LEG = Color.parseColor("#757575");
 
     // address autocomplete
     private ListView suggestionsList;
@@ -186,10 +197,15 @@ public class RouteMapActivity extends AppCompatActivity {
         ((Button) findViewById(R.id.satBtn)).setOnClickListener(v -> toggleSatellite());
         startBtn.setOnClickListener(v -> { if (navigating) stopTrip(); else startTrip(); });
         ((Button) findViewById(R.id.goBtn)).setOnClickListener(v -> onGoTapped());
+        ((Button) findViewById(R.id.directionsBtn)).setOnClickListener(v -> openDirections());
+        ((Button) findViewById(R.id.streetViewBtn)).setOnClickListener(v -> openStreetView());
+        ((Button) findViewById(R.id.transitBtn)).setOnClickListener(v -> openTransit());
         driveBtn = findViewById(R.id.driveBtn);
         walkBtn = findViewById(R.id.walkBtn);
+        transitModeBtn = findViewById(R.id.transitModeBtn);
         driveBtn.setOnClickListener(v -> setMode("drive"));
         walkBtn.setOnClickListener(v -> setMode("walk"));
+        transitModeBtn.setOnClickListener(v -> setMode("transit"));
         updateModePills();
         NavBar.setup(this, (BottomNavigationView) findViewById(R.id.bottomNav), R.id.nav_map);
 
@@ -247,10 +263,11 @@ public class RouteMapActivity extends AppCompatActivity {
         if (pickupMarker != null && dropoffMarker != null) routeFromMarkers("Route");  // re-route in new mode
     }
 
-    /** Segmented Drive|Walk pills: the selected one is filled purple, the other light. */
+    /** Segmented Drive|Walk|Transit pills: the selected one is filled purple. */
     private void updateModePills() {
         stylePill(driveBtn, "drive".equals(travelMode));
         stylePill(walkBtn, "walk".equals(travelMode));
+        stylePill(transitModeBtn, "transit".equals(travelMode));
     }
 
     private void stylePill(Button b, boolean selected) {
@@ -274,7 +291,8 @@ public class RouteMapActivity extends AppCompatActivity {
     /** Show a car (driving) or a person (walking) as the "you are here" marker, not a triangle. */
     private void updateLocationMarker() {
         if (myLocation == null) return;
-        boolean walk = "walk".equals(travelMode);
+        // A transit trip starts and ends on foot, so the person icon is right there too.
+        boolean walk = "walk".equals(travelMode) || "transit".equals(travelMode);
         Bitmap bmp = vectorToBitmap(walk ? R.drawable.ic_marker_person : R.drawable.ic_marker_car,
                 walk ? Color.parseColor("#2E7D32") : Color.parseColor("#1E6FEB"));
         if (bmp != null) {
@@ -476,6 +494,7 @@ public class RouteMapActivity extends AppCompatActivity {
 
     // ───────────────────────── routing ─────────────────────────
     private void routeFromMarkers(String label) {
+        if ("transit".equals(travelMode)) { routeTransit(); return; }
         GeoPoint a = pickupMarker.getPosition(), b = dropoffMarker.getPosition();
         progress.setVisibility(View.VISIBLE);
         if (!navigating) info.setText("Routing…");
@@ -505,10 +524,245 @@ public class RouteMapActivity extends AppCompatActivity {
         });
     }
 
+    // ───────────────────────── public transit ─────────────────────────
+    /**
+     * Ask the backend for transit itineraries. This is the one routing call that is
+     * time-dependent: the answer depends on when you ask, because you have to be at
+     * the stop before the bus leaves. So there is no "alternatives" list of the same
+     * shape — each itinerary is a different departure with its own clock.
+     */
+    private void routeTransit() {
+        GeoPoint a = pickupMarker.getPosition(), b = dropoffMarker.getPosition();
+        progress.setVisibility(View.VISIBLE);
+        info.setText("Finding transit…");
+        ApiClient.get().transit(a.getLatitude(), a.getLongitude(),
+                        b.getLatitude(), b.getLongitude(), 1200, 3)
+                .enqueue(new Callback<ApiModels.TransitResponse>() {
+                    @Override public void onResponse(@NonNull Call<ApiModels.TransitResponse> c,
+                                                     @NonNull Response<ApiModels.TransitResponse> r) {
+                        progress.setVisibility(View.GONE);
+                        if (r.code() == 503) {
+                            // The engine is a separate service. Down is not the same as
+                            // "no such trip", so say so and offer the old handoff.
+                            info.setText("Transit routing is offline right now.\n"
+                                    + "Tap “Maps” to open this trip in Google Maps instead.");
+                            return;
+                        }
+                        if (r.code() == 404) {
+                            info.setText("No transit trip found — this may be outside the "
+                                    + "service area, or outside service hours.");
+                            return;
+                        }
+                        if (!r.isSuccessful() || r.body() == null
+                                || r.body().itineraries == null || r.body().itineraries.isEmpty()) {
+                            info.setText("No transit itineraries came back for those points.");
+                            return;
+                        }
+                        showTransitOptions(r.body().itineraries);
+                    }
+                    @Override public void onFailure(@NonNull Call<ApiModels.TransitResponse> c,
+                                                    @NonNull Throwable t) {
+                        progress.setVisibility(View.GONE);
+                        info.setText("Can't reach server. Is the backend running and BASE_URL correct?");
+                    }
+                });
+    }
+
+    private void showTransitOptions(List<ApiModels.Itinerary> its) {
+        transitOptions = its;
+        selectedItinerary = 0;
+        routeOptions = new ArrayList<>();     // the car-route cards do not apply here
+        buildTransitCards();
+        optionsScroll.setVisibility(View.VISIBLE);
+        drawItinerary(its.get(0));
+    }
+
+    private void selectItinerary(int i) {
+        if (transitOptions == null || i < 0 || i >= transitOptions.size()) return;
+        selectedItinerary = i;
+        buildTransitCards();
+        drawItinerary(transitOptions.get(i));
+    }
+
+    /** Cards read "24 min · 1 transfer · 5:48 → 6:12", with the routes you ride. */
+    private void buildTransitCards() {
+        optionsRow.removeAllViews();
+        if (transitOptions == null || transitOptions.isEmpty()) return;
+        float density = getResources().getDisplayMetrics().density;
+        int pad = (int) (10 * density);
+        for (int i = 0; i < transitOptions.size(); i++) {
+            final int idx = i;
+            ApiModels.Itinerary it = transitOptions.get(i);
+            boolean sel = (i == selectedItinerary);
+
+            LinearLayout card = new LinearLayout(this);
+            card.setOrientation(LinearLayout.VERTICAL);
+            card.setPadding(pad, pad, pad, pad);
+            GradientDrawable bg = new GradientDrawable();
+            bg.setCornerRadius(12 * density);
+            bg.setColor(Color.parseColor(sel ? "#EEEDFE" : "#FFFFFF"));
+            bg.setStroke((int) ((sel ? 2 : 1) * density), Color.parseColor(sel ? "#534AB7" : "#DDDDDD"));
+            card.setBackground(bg);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    (int) (168 * density), ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.setMargins(0, 0, (int) (6 * density), 0);
+            card.setLayoutParams(lp);
+
+            TextView top = new TextView(this);
+            top.setText(routeSummary(it));
+            top.setTextSize(11);
+            top.setTextColor(Color.parseColor("#3C3489"));
+            card.addView(top);
+
+            TextView dur = new TextView(this);
+            dur.setText(String.format(Locale.US, "%d min", it.durationMin));
+            dur.setTextSize(18);
+            dur.setTypeface(null, Typeface.BOLD);
+            dur.setTextColor(Color.parseColor("#1A1A1A"));
+            card.addView(dur);
+
+            TextView sub = new TextView(this);
+            sub.setText(it.transfers == 0 ? "No transfers"
+                    : it.transfers + (it.transfers == 1 ? " transfer" : " transfers"));
+            sub.setTextSize(12);
+            sub.setTextColor(Color.parseColor("#666666"));
+            card.addView(sub);
+
+            // The clock times are the point of a transit card -- "24 min" is useless
+            // if you do not know the bus leaves in two minutes.
+            TextView when = new TextView(this);
+            when.setText(String.format(Locale.US, "%s → %s", it.departTime, it.arriveTime));
+            when.setTextSize(11);
+            when.setTextColor(Color.parseColor("#888888"));
+            card.addView(when);
+
+            card.setOnClickListener(v -> selectItinerary(idx));
+            optionsRow.addView(card);
+        }
+    }
+
+    private String routeSummary(ApiModels.Itinerary it) {
+        if (it.routes == null || it.routes.isEmpty()) return "Walk only";
+        StringBuilder sb = new StringBuilder();
+        for (String r : it.routes) {
+            if (sb.length() > 0) sb.append(" → ");
+            sb.append(r);
+        }
+        return sb.toString();
+    }
+
+    /** Draw each leg in its own colour: walk legs dashed grey, each ride solid. */
+    private void drawItinerary(ApiModels.Itinerary it) {
+        clearRouteOverlays();
+        if (it.legs == null) return;
+
+        List<GeoPoint> all = new ArrayList<>();
+        int rideIndex = 0;
+        for (ApiModels.TransitLeg leg : it.legs) {
+            if (leg.polylineLatlon == null || leg.polylineLatlon.isEmpty()) continue;
+            List<GeoPoint> pts = new ArrayList<>();
+            for (List<Double> p : leg.polylineLatlon) pts.add(new GeoPoint(p.get(0), p.get(1)));
+            all.addAll(pts);
+
+            Polyline line = new Polyline();
+            line.setPoints(pts);
+            boolean ride = leg.isRide();
+            line.getOutlinePaint().setColor(ride ? legColor(leg, rideIndex) : WALK_LEG);
+            line.getOutlinePaint().setStrokeWidth(ride ? 12f : 9f);
+            line.getOutlinePaint().setPathEffect(
+                    ride ? null : new DashPathEffect(new float[]{18f, 12f}, 0f));
+            map.getOverlays().add(line);
+            transitLines.add(line);
+
+            if (ride) {
+                // Mark where you get on and off -- the two moments you can get wrong.
+                addStopDot(pts.get(0), legColor(leg, rideIndex),
+                        boardLabel(leg), leg.fromName);
+                addStopDot(pts.get(pts.size() - 1), legColor(leg, rideIndex),
+                        "Get off " + (leg.arrive != null ? "· " + leg.arrive : ""), leg.toName);
+                rideIndex++;
+            }
+        }
+
+        if (pickupMarker != null) { map.getOverlays().remove(pickupMarker); map.getOverlays().add(pickupMarker); }
+        if (dropoffMarker != null) { map.getOverlays().remove(dropoffMarker); map.getOverlays().add(dropoffMarker); }
+
+        // No voice navigation for transit in v1: the plan is schedule-based, not
+        // turn-based, so there is nothing to announce at a maneuver.
+        navSteps = new ArrayList<>();
+        startBtn.setEnabled(false);
+
+        info.setText(String.format(Locale.US,
+                "%s\n%d min  ·  depart %s, arrive %s  ·  %s\nTap “Steps” for the leg-by-leg plan.",
+                routeSummary(it), it.durationMin, it.departTime, it.arriveTime,
+                it.transfers == 0 ? "no transfers"
+                        : it.transfers + (it.transfers == 1 ? " transfer" : " transfers")));
+
+        if (!all.isEmpty())
+            map.post(() -> map.zoomToBoundingBox(BoundingBox.fromGeoPoints(all), true, 90));
+        map.invalidate();
+    }
+
+    private String boardLabel(ApiModels.TransitLeg leg) {
+        String what = (leg.modeLabel != null ? leg.modeLabel : leg.mode)
+                + (leg.route != null && !leg.route.isEmpty() ? " " + leg.route : "");
+        String head = (leg.headsign != null && !leg.headsign.isEmpty()) ? " toward " + leg.headsign : "";
+        return "Board " + what + head + (leg.depart != null ? " · " + leg.depart : "");
+    }
+
+    /** An agency colour when there is one, otherwise a stable colour per ride leg. */
+    private int legColor(ApiModels.TransitLeg leg, int rideIndex) {
+        if (leg.color != null && leg.color.length() >= 4) {
+            try { return Color.parseColor(leg.color); } catch (IllegalArgumentException ignored) { }
+        }
+        return Color.parseColor(LEG_COLORS[rideIndex % LEG_COLORS.length]);
+    }
+
+    private void addStopDot(GeoPoint p, int color, String title, String snippet) {
+        Marker m = new Marker(map);
+        m.setPosition(p);
+        m.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER);
+        m.setIcon(new BitmapDrawable(getResources(), stopDot(color)));
+        m.setTitle(title);
+        m.setSubDescription(snippet != null ? snippet : "");
+        map.getOverlays().add(m);
+        transitStops.add(m);
+    }
+
+    /** A white-ringed dot, so a boarding point reads clearly against any leg colour. */
+    private Bitmap stopDot(int color) {
+        float d = getResources().getDisplayMetrics().density;
+        int size = (int) (16 * d);
+        Bitmap bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+        Canvas cv = new Canvas(bmp);
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        paint.setColor(Color.WHITE);
+        cv.drawCircle(size / 2f, size / 2f, size / 2f, paint);
+        paint.setColor(color);
+        cv.drawCircle(size / 2f, size / 2f, size / 2f - 3 * d, paint);
+        return bmp;
+    }
+
+    /** Remove whatever the last route drew, car or transit, before drawing the next. */
+    private void clearRouteOverlays() {
+        if (routeLine != null) { map.getOverlays().remove(routeLine); routeLine = null; }
+        removeConnectors();
+        clearTransitOverlays();
+    }
+
+    private void clearTransitOverlays() {
+        for (Polyline l : transitLines) map.getOverlays().remove(l);
+        transitLines.clear();
+        for (Marker m : transitStops) map.getOverlays().remove(m);
+        transitStops.clear();
+    }
+
     private void drawRoute(ApiModels.RouteResponse b, String label) {
         if (b.polylineLatlon == null || b.polylineLatlon.isEmpty()) {
             info.setText("No route geometry returned."); return;
         }
+        transitOptions = new ArrayList<>();
+        clearTransitOverlays();
         routePts = new ArrayList<>();
         for (List<Double> p : b.polylineLatlon) routePts.add(new GeoPoint(p.get(0), p.get(1)));
 
@@ -832,6 +1086,69 @@ public class RouteMapActivity extends AppCompatActivity {
         if (suggestionsList != null) suggestionsList.setVisibility(View.GONE);
     }
 
+    // ───────────────────────── directions list / street view / transit ─────────────────────────
+    private void openDirections() {
+        // A transit plan has no maneuvers to turn at -- the backend hands us the
+        // leg-by-leg lines ready to read, so show those instead of turn steps.
+        if ("transit".equals(travelMode) && transitOptions != null && !transitOptions.isEmpty()) {
+            ApiModels.Itinerary it = transitOptions.get(
+                    Math.min(selectedItinerary, transitOptions.size() - 1));
+            DirectionsActivity.STEPS = null;
+            DirectionsActivity.LINES = it.instructions;
+            DirectionsActivity.SUMMARY = String.format(Locale.US,
+                    "%s\n%d min · depart %s, arrive %s · %.0f m walking",
+                    routeSummary(it), it.durationMin, it.departTime, it.arriveTime,
+                    it.walkDistanceM);
+            startActivity(new android.content.Intent(this, DirectionsActivity.class));
+            return;
+        }
+        if (navSteps == null || navSteps.isEmpty()) {
+            Toast.makeText(this, "Set a destination and route first.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        DirectionsActivity.LINES = null;
+        DirectionsActivity.STEPS = navSteps;
+        String summary = "Turn-by-turn directions";
+        if (routeOptions != null && selectedOption < routeOptions.size()) {
+            ApiModels.RouteResponse o = routeOptions.get(selectedOption);
+            boolean walk = "walk".equals(o.mode);
+            summary = String.format(Locale.US, "%.1f km · %.0f min%s", o.distanceKm, o.etaMin,
+                    walk ? " walk" : String.format(Locale.US, "  ·  $%.2f", o.fareUsd));
+        }
+        DirectionsActivity.SUMMARY = summary;
+        startActivity(new android.content.Intent(this, DirectionsActivity.class));
+    }
+
+    /** Opens Google Street View at the drop-off via a web link (no API key needed to open a URL). */
+    private void openStreetView() {
+        GeoPoint p = (dropoffMarker != null) ? dropoffMarker.getPosition()
+                : (pickupMarker != null ? pickupMarker.getPosition() : null);
+        if (p == null) { Toast.makeText(this, "Set a point on the map first.", Toast.LENGTH_SHORT).show(); return; }
+        openUrl("https://www.google.com/maps/@?api=1&map_action=pano&viewpoint="
+                + p.getLatitude() + "," + p.getLongitude());
+    }
+
+    /** Opens Google Maps transit directions for pickup -> drop-off via a web link. */
+    private void openTransit() {
+        if (pickupMarker == null || dropoffMarker == null) {
+            Toast.makeText(this, "Set both a pickup and a destination first.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        GeoPoint a = pickupMarker.getPosition(), b = dropoffMarker.getPosition();
+        openUrl("https://www.google.com/maps/dir/?api=1&travelmode=transit"
+                + "&origin=" + a.getLatitude() + "," + a.getLongitude()
+                + "&destination=" + b.getLatitude() + "," + b.getLongitude());
+    }
+
+    private void openUrl(String url) {
+        try {
+            startActivity(new android.content.Intent(android.content.Intent.ACTION_VIEW,
+                    android.net.Uri.parse(url)));
+        } catch (Exception e) {
+            Toast.makeText(this, "No app available to open the link.", Toast.LENGTH_SHORT).show();
+        }
+    }
+
 
     /** A short dashed line bridging a pin to the nearest routable node (null if the gap is tiny). */
     private Polyline addConnector(GeoPoint a, GeoPoint b) {
@@ -852,11 +1169,11 @@ public class RouteMapActivity extends AppCompatActivity {
 
     private void resetMap() {
         if (navigating) stopTrip();
-        if (routeLine != null) { map.getOverlays().remove(routeLine); routeLine = null; }
-        removeConnectors();
+        clearRouteOverlays();
         if (dropoffMarker != null) { map.getOverlays().remove(dropoffMarker); dropoffMarker = null; }
         navSteps = new ArrayList<>();
         routeOptions = new ArrayList<>();
+        transitOptions = new ArrayList<>();
         optionsScroll.setVisibility(View.GONE);
         startBtn.setEnabled(false);
         dropoffText.setText(R.string.dropoff_hint);

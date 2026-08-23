@@ -51,4 +51,15 @@ public interface ApiService {
     // Autocomplete: up to 5 matching places for a partial query.
     @GET("search")
     Call<ApiModels.SearchResponse> search(@Query("q") String q);
+
+    // Public transit. Unlike routeLatLon this is time-dependent -- the answer
+    // depends on when you ask, because you have to catch the bus. A 503 here means
+    // the transit engine is down, not that the trip is impossible.
+    @GET("transit")
+    Call<ApiModels.TransitResponse> transit(@Query("lat1") double lat1,
+                                            @Query("lon1") double lon1,
+                                            @Query("lat2") double lat2,
+                                            @Query("lon2") double lon2,
+                                            @Query("max_walk_m") int maxWalkM,
+                                            @Query("want") int want);
 }

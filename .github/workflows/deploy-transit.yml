@@ -54,6 +54,15 @@ jobs:
           echo "name=${NAME}" >> "$GITHUB_OUTPUT"
           echo "ref=${REGISTRY}/${NAME}:latest" >> "$GITHUB_OUTPUT"
 
+      # Required before the build step: the default buildx driver is "docker",
+      # which cannot export a cache, so `cache-to: type=gha` fails the build
+      # outright rather than just skipping the cache. This action swaps in the
+      # docker-container driver. deploy-rideiq has always had it; this workflow
+      # was written without it.
+      - name: Set up Docker Buildx
+        if: ${{ inputs.rebuild_image }}
+        uses: docker/setup-buildx-action@v3
+
       - name: Log in to ghcr.io
         if: ${{ inputs.rebuild_image }}
         uses: docker/login-action@v3

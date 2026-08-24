@@ -32,6 +32,10 @@ on:
 
 permissions:
   contents: write        # publishes the graph as a release asset
+  # Naming any permission sets every unnamed one to none, so the final "Ship it"
+  # step needs this spelled out: without actions:write, `gh workflow run` 403s and
+  # the chain into deploy-transit breaks after a successful 10-minute build.
+  actions: write
 
 concurrency:
   group: transit-graph

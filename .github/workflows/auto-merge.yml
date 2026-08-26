@@ -1,0 +1,60 @@
+# =============================================================================
+# auto-merge: turn on GitHub's native auto-merge for every pull request, so a PR
+# lands in main by itself the moment ci goes green -- no clicking Merge.
+#
+# This uses GitHub's own auto-merge rather than merging via the API, and the
+# difference matters: native auto-merge is queued by GitHub and only fires when
+# EVERY branch-protection requirement is satisfied. A workflow that called the
+# merge API directly would be merging on its own opinion of "looks fine", which
+# is a machine for shipping red builds.
+#
+# The safety therefore does not live in this file. It lives in the branch
+# protection on main, which requires the three ci checks. Weaken that and this
+# workflow silently becomes "merge everything".
+#
+# Not auto-merged: PRs marked draft, and PRs carrying the `hold` label -- an
+# escape hatch for when you want a human to look before it lands.
+# =============================================================================
+
+name: auto-merge
+
+on:
+  # `pull_request`, deliberately not `pull_request_target`. For same-repo PRs the
+  # token already has write access, so the riskier trigger buys nothing here --
+  # and its cost is real: pull_request_target hands a merge-capable token to code
+  # from forks. The trade is that fork PRs will not auto-merge, which is the
+  # behaviour you want anyway.
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review, labeled, unlabeled]
+
+permissions:
+  contents: write         # performs the merge
+  pull-requests: write    # flips the auto-merge flag
+
+concurrency:
+  group: auto-merge-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  enable:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      !github.event.pull_request.draft &&
+      !contains(github.event.pull_request.labels.*.name, 'hold')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enable auto-merge
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.html_url }}
+        run: |
+          # Squash: the branch history is working detail, main should read as one
+          # change per PR. Already-enabled is success, not an error.
+          if gh pr merge --squash --auto "$PR"; then
+            echo "Auto-merge armed. This PR lands when ci passes."
+          else
+            echo "::warning::Could not arm auto-merge. Usually this means branch"
+            echo "::warning::protection on main is missing or has no required checks,"
+            echo "::warning::so the PR is already mergeable and there is nothing to wait for."
+            exit 1
+          fi

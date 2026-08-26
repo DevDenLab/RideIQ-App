@@ -1,0 +1,147 @@
+# =============================================================================
+# ci: the gate everything else hangs off.
+#
+# This runs on every pull request and every push to main. auto-merge waits for
+# it, and branch protection requires it, so a red run here is what stops broken
+# code reaching EC2 -- deploy-rideiq ships to production on every merge.
+#
+# It is deliberately a SMOKE test, not a test suite. The repo has no unit tests
+# yet, so what this proves is narrow and worth stating plainly: the backend
+# imports and serves, the app compiles, and the workflows are valid YAML with no
+# actionlint errors. It does NOT prove any behaviour is correct. Treat a green
+# tick as "nothing is obviously broken", not "this works".
+#
+# The first thing anyone adding real tests should do is wire them in here.
+# =============================================================================
+
+name: ci
+
+on:
+  pull_request:
+  # Not `push: main`. deploy-rideiq calls this as a gate before it ships, so a
+  # push trigger here would run the same checks twice and still not block the
+  # deploy. One run, in the place where it can actually stop something.
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  # A new push to a PR makes the previous run pointless -- cancel it.
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: backend boots and serves
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: rideiq-backend/requirements.txt
+
+      - name: Install dependencies
+        working-directory: rideiq-backend
+        run: pip install -r requirements.txt
+
+      - name: Boot the API and exercise it
+        working-directory: rideiq-backend
+        run: |
+          # Importing app.py trains 15 ML models, which takes ~20s. Give the
+          # server room for that before deciding it failed to start.
+          python -m uvicorn app:app --host 127.0.0.1 --port 8000 &
+          for i in $(seq 1 60); do
+            curl -sf -m 2 http://127.0.0.1:8000/health >/dev/null && break
+            sleep 2
+          done
+          curl -sf -m 5 http://127.0.0.1:8000/health || { echo "API never came up"; exit 1; }
+
+          echo "--- health ---";   curl -s http://127.0.0.1:8000/health;   echo
+          echo "--- pipeline ---"; curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8000/pipeline
+          echo "--- openapi ---";  curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8000/openapi.json
+
+          echo "--- quote ---"
+          curl -sf -X POST http://127.0.0.1:8000/quote -H 'Content-Type: application/json' \
+            -d '{"distance":12,"hour":18,"weather":1,"traffic":0.8,"surge":2.2}' \
+            | python -c "import json,sys; d=json.load(sys.stdin); assert d['eta_min']>0 and d['fare_usd']>0, d; print('ok', d['eta_min'], d['fare_usd'])"
+
+          echo "--- drive route on the committed city graph ---"
+          curl -sf -X POST http://127.0.0.1:8000/route-latlon -H 'Content-Type: application/json' \
+            -d '{"lat1":53.5444,"lon1":-113.4909,"lat2":53.5232,"lon2":-113.5263,"mode":"drive"}' \
+            | python -c "import json,sys; d=json.load(sys.stdin); assert d['polyline_latlon'], 'no geometry'; print('ok', d['distance_km'], 'km')"
+
+          # No OTP in CI, so this MUST degrade to 503 rather than 500 or hang.
+          # That contract is what lets the app fall back to the Maps handoff.
+          echo "--- transit degrades cleanly without an engine ---"
+          code=$(curl -s -o /dev/null -w '%{http_code}' -m 30 \
+            "http://127.0.0.1:8000/transit?lat1=53.5444&lon1=-113.4909&lat2=53.5232&lon2=-113.5263")
+          echo "status $code"
+          [ "$code" = "503" ] || { echo "expected 503 with no OTP, got $code"; exit 1; }
+
+      - name: transit_client unit checks
+        working-directory: rideiq-backend
+        run: python -m unittest discover -s tests -v
+
+  android:
+    name: android app compiles
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: assembleDebug
+        working-directory: rideiq-android
+        run: ./gradlew assembleDebug --console=plain --no-daemon
+
+      - name: Upload the APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-${{ github.sha }}
+          path: rideiq-android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+
+  workflows:
+    name: workflows are valid
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      # Both CI bugs shipped this month were workflow bugs that only surfaced on
+      # a real run: a missing permission scope and a missing buildx setup step.
+      # actionlint catches that class statically, in seconds.
+      - name: actionlint
+        run: |
+          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+          ./actionlint -color
+
+      - name: Config files parse
+        run: |
+          python - <<'PY'
+          import json, glob, sys
+          # OTP allows // comments in its config; strip them before parsing.
+          def strip(text):
+              return "\n".join(l for l in text.splitlines()
+                               if not l.lstrip().startswith("//"))
+          bad = 0
+          for f in glob.glob("rideiq-backend/transit/otp-config/*.json"):
+              try:
+                  json.loads(strip(open(f, encoding="utf-8").read()))
+                  print("ok  ", f)
+              except Exception as e:
+                  print("FAIL", f, e); bad = 1
+          sys.exit(bad)
+          PY

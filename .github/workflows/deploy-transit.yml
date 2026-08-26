@@ -19,6 +19,15 @@
 name: deploy-transit
 
 on:
+  # Auto: whenever something that defines the ENGINE changes on main. The graph
+  # itself is not here -- that arrives via build-transit-graph, which dispatches
+  # this workflow when it publishes a new one.
+  push:
+    branches: [ "main" ]
+    paths:
+      - 'rideiq-backend/transit/Dockerfile'
+      - 'rideiq-backend/transit/otp-config/**'
+      - '.github/workflows/deploy-transit.yml'
   workflow_dispatch:
     inputs:
       rebuild_image:
@@ -54,17 +63,22 @@ jobs:
           echo "name=${NAME}" >> "$GITHUB_OUTPUT"
           echo "ref=${REGISTRY}/${NAME}:latest" >> "$GITHUB_OUTPUT"
 
+      # NOTE on the `if` conditions below: `inputs` is null on a push event, so
+      # a bare `inputs.rebuild_image` evaluates falsy and would skip the image
+      # build on exactly the pushes that changed the Dockerfile. Hence the
+      # explicit event check.
+      #
       # Required before the build step: the default buildx driver is "docker",
       # which cannot export a cache, so `cache-to: type=gha` fails the build
       # outright rather than just skipping the cache. This action swaps in the
       # docker-container driver. deploy-rideiq has always had it; this workflow
       # was written without it.
       - name: Set up Docker Buildx
-        if: ${{ inputs.rebuild_image }}
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.rebuild_image }}
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to ghcr.io
-        if: ${{ inputs.rebuild_image }}
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.rebuild_image }}
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -72,7 +86,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push the OTP image
-        if: ${{ inputs.rebuild_image }}
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.rebuild_image }}
         uses: docker/build-push-action@v6
         with:
           context: ./rideiq-backend/transit

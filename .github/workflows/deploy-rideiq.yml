@@ -16,6 +16,12 @@ name: deploy-rideiq
 on:
   push:
     branches: [ "main" ]
+    paths-ignore:
+      # Docs-only commits should not restart production containers.
+      - '**/*.md'
+      - 'Diagram/**'
+      - '**/*.docx'
+      - '**/*.pptx'
   workflow_dispatch:
     inputs:
       rollback_sha:
@@ -33,9 +39,20 @@ env:
 
 jobs:
   # ---------------------------------------------------------------------------
+  # GATE: run ci before anything is built or shipped. Merging to main deploys to
+  # production, so this is the last point where a bad change can be stopped.
+  # A rollback skips it -- the SHA being restored was already green once, and
+  # re-testing it delays exactly the operation you reach for when prod is broken.
+  # ---------------------------------------------------------------------------
+  gate:
+    if: ${{ github.event.inputs.rollback_sha == '' }}
+    uses: ./.github/workflows/ci.yml
+
+  # ---------------------------------------------------------------------------
   # BUILD: build the RideIQ backend image, push sha-<commit> + latest to ghcr.io
   # ---------------------------------------------------------------------------
   build-and-push:
+    needs: gate
     if: ${{ github.event.inputs.rollback_sha == '' }}   # rollback skips build
     runs-on: ubuntu-latest
     steps:

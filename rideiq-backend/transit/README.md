@@ -122,6 +122,11 @@ actually think about catching a bus.
 
 ## Deploying it
 
+Nothing here needs a button pressed. A merged PR deploys itself; the graph
+rebuilds on a schedule and ships itself; an hourly reconciler redeploys if
+production ever drifts from `main`. See [ci.yml](../../.github/workflows/ci.yml)
+for what gates all of it.
+
 Two GitHub Actions workflows, deliberately separate from the app's deploy:
 
 | Workflow | When | What it does |

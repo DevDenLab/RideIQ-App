@@ -5,13 +5,14 @@
 # it, and branch protection requires it, so a red run here is what stops broken
 # code reaching EC2 -- deploy-rideiq ships to production on every merge.
 #
-# It is deliberately a SMOKE test, not a test suite. The repo has no unit tests
-# yet, so what this proves is narrow and worth stating plainly: the backend
-# imports and serves, the app compiles, and the workflows are valid YAML with no
-# actionlint errors. It does NOT prove any behaviour is correct. Treat a green
-# tick as "nothing is obviously broken", not "this works".
+# It is mostly a SMOKE test, and what it proves is worth stating plainly: the
+# backend imports and serves, the app compiles, the workflows lint, and
+# transit_client's pure functions behave. Coverage beyond that is nil -- nothing
+# here exercises the Android UI, the OTP integration, or any endpoint's
+# behaviour beyond a status code. Treat a green tick as "nothing is obviously
+# broken", not "this works".
 #
-# The first thing anyone adding real tests should do is wire them in here.
+# Widening it is the highest-value thing anyone can do to this repo.
 # =============================================================================
 
 name: ci
@@ -55,7 +56,7 @@ jobs:
           # Importing app.py trains 15 ML models, which takes ~20s. Give the
           # server room for that before deciding it failed to start.
           python -m uvicorn app:app --host 127.0.0.1 --port 8000 &
-          for i in $(seq 1 60); do
+          for _ in $(seq 1 60); do
             curl -sf -m 2 http://127.0.0.1:8000/health >/dev/null && break
             sleep 2
           done

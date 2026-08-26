@@ -1,0 +1,34 @@
+# Build output and local tool state. None of this is source, and tracking it has
+# already cost us twice: a half-committed DirectionsActivity (the .java landed,
+# its layout did not, and main would not compile from a clean clone), and a
+# one-file mode fix that swept in 149 unrelated artifacts.
+#
+# These files stay on disk -- this only stops git following them.
+
+# Android
+rideiq-android/build/
+rideiq-android/app/build/
+rideiq-android/.gradle/
+rideiq-android/local.properties
+*.apk
+*.aab
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Transit engine working data (GTFS, OSM extracts, the OTP jar, graph.obj).
+# rideiq-backend/transit/.gitignore covers this too; repeated here so a clone
+# that only reads the root file still gets it right.
+rideiq-backend/transit/data/
+
+# Local runtime state
+rideiq-backend/rideiq.db
+rideiq-backend/cache/

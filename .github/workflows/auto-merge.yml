@@ -1,60 +1,112 @@
 # =============================================================================
-# auto-merge: turn on GitHub's native auto-merge for every pull request, so a PR
-# lands in main by itself the moment ci goes green -- no clicking Merge.
+# auto-merge: land a green PR and then kick off the deploy.
 #
-# This uses GitHub's own auto-merge rather than merging via the API, and the
-# difference matters: native auto-merge is queued by GitHub and only fires when
-# EVERY branch-protection requirement is satisfied. A workflow that called the
-# merge API directly would be merging on its own opinion of "looks fine", which
-# is a machine for shipping red builds.
+# WHY THIS IS NOT GitHub's native auto-merge
+# ------------------------------------------
+# Native auto-merge works -- it merged PR #2 on its own. The problem is what
+# happens next: nothing. GitHub does not start workflow runs from events caused
+# by GITHUB_TOKEN, so a bot-performed merge lands on main and deploy-rideiq never
+# fires. That is worse than a manual merge, because the pipeline LOOKS automatic
+# right up until you notice production is several commits behind.
 #
-# The safety therefore does not live in this file. It lives in the branch
-# protection on main, which requires the three ci checks. Weaken that and this
-# workflow silently becomes "merge everything".
+# `workflow_dispatch` is one of exactly two documented exceptions to that rule.
+# So this workflow does the merge itself and then explicitly dispatches the
+# deploy, which is the only way to close the loop without a personal access
+# token (a PAT would work, but it is a manual step with an expiry date attached).
 #
-# Not auto-merged: PRs marked draft, and PRs carrying the `hold` label -- an
-# escape hatch for when you want a human to look before it lands.
+# HOW IT DECIDES
+# --------------
+# It runs after ci finishes, reads that run's conclusion, and refuses to merge
+# unless it was a success. It does not form its own opinion about whether the
+# code is good -- branch protection on main is still the authority, and the merge
+# call fails if any required check is missing.
+#
+# Not merged: draft PRs, and PRs labelled `hold`.
 # =============================================================================
 
 name: auto-merge
 
 on:
-  # `pull_request`, deliberately not `pull_request_target`. For same-repo PRs the
-  # token already has write access, so the riskier trigger buys nothing here --
-  # and its cost is real: pull_request_target hands a merge-capable token to code
-  # from forks. The trade is that fork PRs will not auto-merge, which is the
-  # behaviour you want anyway.
-  pull_request:
-    types: [opened, reopened, synchronize, ready_for_review, labeled, unlabeled]
+  workflow_run:
+    workflows: ["ci"]
+    types: [completed]
 
 permissions:
-  contents: write         # performs the merge
-  pull-requests: write    # flips the auto-merge flag
-
-concurrency:
-  group: auto-merge-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  contents: write         # perform the merge
+  pull-requests: write    # read and merge the PR
+  actions: write          # dispatch deploy-rideiq
 
 jobs:
-  enable:
-    if: >-
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      !github.event.pull_request.draft &&
-      !contains(github.event.pull_request.labels.*.name, 'hold')
+  merge:
+    # A red ci must never reach the merge call.
+    if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
-      - name: Enable auto-merge
+      - name: Find the pull request this ci run belongs to
+        id: pr
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR: ${{ github.event.pull_request.html_url }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          REPO: ${{ github.repository }}
         run: |
-          # Squash: the branch history is working detail, main should read as one
-          # change per PR. Already-enabled is success, not an error.
-          if gh pr merge --squash --auto "$PR"; then
-            echo "Auto-merge armed. This PR lands when ci passes."
-          else
-            echo "::warning::Could not arm auto-merge. Usually this means branch"
-            echo "::warning::protection on main is missing or has no required checks,"
-            echo "::warning::so the PR is already mergeable and there is nothing to wait for."
-            exit 1
+          # A ci run on a branch with no open PR (or a push straight to main) is
+          # simply nothing to do, not an error.
+          num=$(gh pr list --repo "$REPO" --head "$BRANCH" --state open \
+                  --json number --jq '.[0].number // empty')
+          if [ -z "$num" ]; then
+            echo "No open PR for $BRANCH -- nothing to merge."
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+          echo "found=true"   >> "$GITHUB_OUTPUT"
+          echo "number=$num"  >> "$GITHUB_OUTPUT"
+
+      - name: Check it is eligible
+        id: eligible
+        if: steps.pr.outputs.found == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          NUM: ${{ steps.pr.outputs.number }}
+        run: |
+          data=$(gh pr view "$NUM" --repo "$REPO" --json isDraft,labels,mergeStateStatus)
+          echo "$data"
+          draft=$(echo "$data" | jq -r '.isDraft')
+          held=$(echo "$data"  | jq -r '[.labels[].name] | index("hold") != null')
+          if [ "$draft" = "true" ] || [ "$held" = "true" ]; then
+            echo "PR #$NUM is draft or on hold -- leaving it."
+            echo "go=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "go=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Merge
+        id: merge
+        if: steps.eligible.outputs.go == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          NUM: ${{ steps.pr.outputs.number }}
+        run: |
+          # Squash so main reads as one change per PR. --auto is the fallback:
+          # if some other required check is still running, GitHub queues it
+          # rather than failing here (that queued merge will not dispatch the
+          # deploy -- reconcile-deploy.yml is what covers that case).
+          if gh pr merge "$NUM" --repo "$REPO" --squash --delete-branch; then
+            echo "Merged PR #$NUM"
+            echo "merged=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Direct merge refused; queueing native auto-merge instead."
+            gh pr merge "$NUM" --repo "$REPO" --squash --auto --delete-branch || true
+            echo "merged=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Deploy the merge
+        if: steps.merge.outputs.merged == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # The explicit dispatch that closes the loop. Without this the merge
+          # above is invisible to Actions and production silently drifts behind.
+          gh workflow run deploy-rideiq.yml --ref main
+          echo "Dispatched deploy-rideiq against main."

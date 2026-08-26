@@ -1,0 +1,100 @@
+# =============================================================================
+# reconcile-deploy: notice when production has drifted behind main, and fix it.
+#
+# The pipeline has several ways to leave main deployed-but-not-really:
+#   * a merge GitHub performed itself (queued native auto-merge), which starts no
+#     workflow run because GITHUB_TOKEN caused it;
+#   * a deploy that failed halfway and nobody watched;
+#   * a direct push to main by an admin, which bypasses the PR path entirely;
+#   * a container the host restarted onto an older image.
+#
+# Rather than trying to plug each hole, this asks the only question that matters
+# -- is the SHA running on EC2 the SHA at the head of main? -- and redeploys when
+# the answer is no. It is a reconciler, not another trigger, so it also serves as
+# the honest answer to "is production actually up to date?".
+#
+# Runs hourly, and can be run by hand. Reports without acting when `check_only`.
+# =============================================================================
+
+name: reconcile-deploy
+
+on:
+  schedule:
+    - cron: "17 * * * *"     # hourly, off the hour to dodge the rush
+  workflow_dispatch:
+    inputs:
+      check_only:
+        description: "Report drift without redeploying"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  actions: write             # dispatches deploy-rideiq
+
+concurrency:
+  group: reconcile-deploy
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: What does main say?
+        id: want
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: What is actually running?
+        id: have
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          # The live container is whichever colour exists; its image tag carries
+          # the commit as sha-<full>. Print just that.
+          script: |
+            for c in rideiq-blue rideiq-green; do
+              if docker ps -q -f "name=^${c}$" | grep -q .; then
+                docker inspect --format '{{index .Config.Image}}' "$c" \
+                  | sed 's/.*:sha-//'
+                exit 0
+              fi
+            done
+            echo "none"
+
+      - name: Compare and act
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WANT: ${{ steps.want.outputs.sha }}
+          HAVE: ${{ steps.have.outputs.stdout }}
+          CHECK_ONLY: ${{ inputs.check_only }}
+        run: |
+          # ssh-action returns the whole session on stdout; take the last
+          # non-empty line, which is what the script above printed.
+          have=$(printf '%s\n' "$HAVE" | tr -d '\r' | grep -v '^$' | tail -1)
+          echo "main:     $WANT"
+          echo "deployed: $have"
+
+          if [ "$have" = "$WANT" ]; then
+            echo "In sync."
+            exit 0
+          fi
+
+          if [ "$have" = "none" ]; then
+            echo "::warning::No RideIQ container is running on the host at all."
+          fi
+
+          echo "::warning::Production is not at main ($have vs $WANT)."
+          if [ "$CHECK_ONLY" = "true" ]; then
+            echo "check_only set -- not redeploying."
+            exit 0
+          fi
+          gh workflow run deploy-rideiq.yml --ref main
+          echo "Dispatched deploy-rideiq to bring production back to main."

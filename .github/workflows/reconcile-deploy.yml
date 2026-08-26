@@ -57,17 +57,23 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
+          # Without this the step's stdout output comes back empty, and the
+          # comparison below then reads "" != <sha> as drift on every single run
+          # -- an hourly redeploy of production, forever.
+          capture_stdout: true
           # The live container is whichever colour exists; its image tag carries
-          # the commit as sha-<full>. Print just that.
+          # the commit as sha-<full>. The marker makes the value greppable out of
+          # the action's own chatter instead of guessing at line positions.
           script: |
             for c in rideiq-blue rideiq-green; do
               if docker ps -q -f "name=^${c}$" | grep -q .; then
-                docker inspect --format '{{index .Config.Image}}' "$c" \
-                  | sed 's/.*:sha-//'
+                sha=$(docker inspect --format '{{index .Config.Image}}' "$c" \
+                        | sed 's/.*:sha-//')
+                echo "DEPLOYED_SHA=${sha}"
                 exit 0
               fi
             done
-            echo "none"
+            echo "DEPLOYED_SHA=none"
 
       - name: Compare and act
         env:
@@ -76,11 +82,17 @@ jobs:
           HAVE: ${{ steps.have.outputs.stdout }}
           CHECK_ONLY: ${{ inputs.check_only }}
         run: |
-          # ssh-action returns the whole session on stdout; take the last
-          # non-empty line, which is what the script above printed.
-          have=$(printf '%s\n' "$HAVE" | tr -d '\r' | grep -v '^$' | tail -1)
+          have=$(printf '%s\n' "$HAVE" | tr -d '\r' \
+                 | sed -n 's/^DEPLOYED_SHA=//p' | tail -1)
           echo "main:     $WANT"
-          echo "deployed: $have"
+          echo "deployed: ${have:-<could not read>}"
+
+          # An unreadable answer is not the same as drift. Redeploying because we
+          # failed to ask the question is how a reconciler becomes a loop.
+          if [ -z "$have" ]; then
+            echo "::error::Could not read the deployed SHA from the host."
+            exit 1
+          fi
 
           if [ "$have" = "$WANT" ]; then
             echo "In sync."

@@ -105,8 +105,12 @@ jobs:
         if: steps.merge.outputs.merged == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
         run: |
           # The explicit dispatch that closes the loop. Without this the merge
           # above is invisible to Actions and production silently drifts behind.
-          gh workflow run deploy-rideiq.yml --ref main
+          #
+          # --repo is not optional here: this job has no checkout, so gh has no
+          # repository to infer from and exits 1 with nothing useful on stdout.
+          gh workflow run deploy-rideiq.yml --repo "$REPO" --ref main
           echo "Dispatched deploy-rideiq against main."

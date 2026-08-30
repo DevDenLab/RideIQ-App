@@ -23,6 +23,15 @@ public class ApiClient {
             log.setLevel(HttpLoggingInterceptor.Level.BASIC);
             OkHttpClient http = new OkHttpClient.Builder()
                     .addInterceptor(log)
+                    // Attach the shared key to every call. Be honest about what
+                    // this is: the key ships inside a public APK, so anyone
+                    // determined can extract it. It is not authentication. It
+                    // stops casual scraping and gives us something to rotate, and
+                    // the real abuse protection is the per-IP rate limit at nginx.
+                    .addInterceptor(chain -> chain.proceed(
+                            chain.request().newBuilder()
+                                    .header("X-API-Key", BuildConfig.RIDEIQ_API_KEY)
+                                    .build()))
                     .connectTimeout(10, TimeUnit.SECONDS)
                     .readTimeout(40, TimeUnit.SECONDS)
                     .build();

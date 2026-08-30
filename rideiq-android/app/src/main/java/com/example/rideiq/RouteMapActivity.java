@@ -42,6 +42,7 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
+import androidx.lifecycle.ViewModelProvider;
 
 import com.google.android.material.bottomnavigation.BottomNavigationView;
 
@@ -152,6 +153,9 @@ public class RouteMapActivity extends AppCompatActivity {
     private ImageButton mapToggleBtn;
     private boolean panelsHidden = false;
 
+    // Survives rotation. Without it, turning the phone threw the whole plan away.
+    private RouteState state;
+
     /** Fallback colours for routes whose agency publishes no route_color. */
     private static final String[] LEG_COLORS = {"#1E6FEB", "#E65100", "#6A1B9A", "#00838F"};
     private static final int WALK_LEG = Color.parseColor("#757575");
@@ -203,6 +207,8 @@ public class RouteMapActivity extends AppCompatActivity {
         suggestionsList.setOnItemClickListener((parent, view, position, id) -> onSuggestionPicked(position));
         attachAutocomplete(startField);
         attachAutocomplete(destField);
+
+        state = new ViewModelProvider(this).get(RouteState.class);
 
         map = findViewById(R.id.map);
         map.setTileSource(STREET);
@@ -262,7 +268,12 @@ public class RouteMapActivity extends AppCompatActivity {
 
         setupMyLocation();
 
-        if (hasLocationPermission()) {
+        // Restoring must win over "set pickup to my location": after a rotation the
+        // user's chosen start point would otherwise jump back to where they stand.
+        boolean restored = restoreState();
+        if (restored) {
+            // nothing further -- the plan is already back on the map
+        } else if (hasLocationPermission()) {
             setPickupToMyLocation();
         } else {
             ActivityCompat.requestPermissions(this,
@@ -411,6 +422,69 @@ public class RouteMapActivity extends AppCompatActivity {
     /** Bring the panels back if something needs to be read there. */
     private void revealPanels() {
         if (panelsHidden) togglePanels();
+    }
+
+    /** Copy what the user has built into the holder that survives rotation. */
+    private void saveState() {
+        if (state == null) return;
+        state.travelMode = travelMode;
+        state.routeOptions = routeOptions;
+        state.selectedOption = selectedOption;
+        state.lastRouteLabel = lastRouteLabel;
+        state.transitOptions = transitOptions;
+        state.selectedItinerary = selectedItinerary;
+        state.transitWhen = transitWhen;
+        state.transitArriveBy = transitArriveBy;
+        state.wheelchair = wheelchair;
+        if (pickupMarker != null) {
+            state.pickupLat = pickupMarker.getPosition().getLatitude();
+            state.pickupLon = pickupMarker.getPosition().getLongitude();
+            state.hasPickup = true;
+        }
+        if (dropoffMarker != null) {
+            state.dropoffLat = dropoffMarker.getPosition().getLatitude();
+            state.dropoffLon = dropoffMarker.getPosition().getLongitude();
+            state.hasDropoff = true;
+        }
+        state.hasPlan = !routeOptions.isEmpty() || !transitOptions.isEmpty()
+                || state.hasPickup || state.hasDropoff;
+    }
+
+    /**
+     * Put the plan back after a rotation.
+     *
+     * Returns true if anything was restored, so onCreate knows not to go and set
+     * the pickup from GPS again -- doing that would silently move the user's
+     * chosen start point back to wherever they happen to be standing.
+     */
+    private boolean restoreState() {
+        if (state == null || !state.hasPlan) return false;
+        travelMode = state.travelMode;
+        transitWhen = state.transitWhen;
+        transitArriveBy = state.transitArriveBy;
+        wheelchair = state.wheelchair;
+        updateModePills();
+        updateLocationMarker();
+
+        if (state.hasPickup) setPickup(new GeoPoint(state.pickupLat, state.pickupLon));
+        if (state.hasDropoff) setDropoff(new GeoPoint(state.dropoffLat, state.dropoffLon));
+
+        if (!state.transitOptions.isEmpty()) {
+            transitOptions = state.transitOptions;
+            selectedItinerary = Math.min(state.selectedItinerary,
+                                         transitOptions.size() - 1);
+            buildTransitCards();
+            optionsScroll.setVisibility(View.VISIBLE);
+            drawItinerary(transitOptions.get(selectedItinerary));
+        } else if (!state.routeOptions.isEmpty()) {
+            routeOptions = state.routeOptions;
+            selectedOption = Math.min(state.selectedOption, routeOptions.size() - 1);
+            lastRouteLabel = state.lastRouteLabel;
+            buildOptionCards();
+            optionsScroll.setVisibility(routeOptions.size() > 1 ? View.VISIBLE : View.GONE);
+            drawRoute(routeOptions.get(selectedOption), lastRouteLabel);
+        }
+        return true;
     }
 
     // ───────────────────────── my location ─────────────────────────
@@ -722,6 +796,7 @@ public class RouteMapActivity extends AppCompatActivity {
 
     private void showTransitOptions(List<ApiModels.Itinerary> its) {
         transitOptions = its;
+        saveState();
         // OTP may answer "just walk", and that option often sorts first because it
         // is shortest. Keep it -- seeing that walking beats waiting is genuinely
         // useful -- but never let it be the default when the user asked for transit
@@ -739,6 +814,7 @@ public class RouteMapActivity extends AppCompatActivity {
     private void selectItinerary(int i) {
         if (transitOptions == null || i < 0 || i >= transitOptions.size()) return;
         selectedItinerary = i;
+        saveState();
         buildTransitCards();
         drawItinerary(transitOptions.get(i));
     }
@@ -1021,6 +1097,7 @@ public class RouteMapActivity extends AppCompatActivity {
     // ───────────────────────── route options (alternatives) ─────────────────────────
     private void showRouteOptions(List<ApiModels.RouteResponse> opts, String label) {
         routeOptions = opts;
+        saveState();
         selectedOption = 0;
         lastRouteLabel = label;
         buildOptionCards();
@@ -1031,6 +1108,7 @@ public class RouteMapActivity extends AppCompatActivity {
     private void selectOption(int i) {
         if (routeOptions == null || i < 0 || i >= routeOptions.size()) return;
         selectedOption = i;
+        saveState();
         buildOptionCards();
         drawRoute(routeOptions.get(i), lastRouteLabel);
     }
@@ -1449,6 +1527,7 @@ public class RouteMapActivity extends AppCompatActivity {
         navSteps = new ArrayList<>();
         routeOptions = new ArrayList<>();
         transitOptions = new ArrayList<>();
+        if (state != null) state.clear();
         optionsScroll.setVisibility(View.GONE);
         startBtn.setEnabled(false);
         dropoffText.setText(R.string.dropoff_hint);

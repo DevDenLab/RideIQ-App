@@ -31,6 +31,7 @@ import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.HorizontalScrollView;
+import android.widget.ImageButton;
 import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.ProgressBar;
@@ -139,6 +140,13 @@ public class RouteMapActivity extends AppCompatActivity {
     private LinearLayout transitOptionsRow;
     private Button whenBtn, accessBtn;
 
+    // The two floating cards cover the top and bottom of the map, and in transit
+    // mode they grow: the info line runs to several lines and the itinerary cards
+    // appear. Collapsing them is the only way to actually look at the route.
+    private View searchCard, routePanel;
+    private ImageButton mapToggleBtn;
+    private boolean panelsHidden = false;
+
     /** Fallback colours for routes whose agency publishes no route_color. */
     private static final String[] LEG_COLORS = {"#1E6FEB", "#E65100", "#6A1B9A", "#00838F"};
     private static final int WALK_LEG = Color.parseColor("#757575");
@@ -219,6 +227,10 @@ public class RouteMapActivity extends AppCompatActivity {
         accessBtn = findViewById(R.id.accessBtn);
         whenBtn.setOnClickListener(v -> pickTransitTime());
         accessBtn.setOnClickListener(v -> toggleWheelchair());
+        searchCard = findViewById(R.id.searchCard);
+        routePanel = findViewById(R.id.routePanel);
+        mapToggleBtn = findViewById(R.id.mapToggleBtn);
+        mapToggleBtn.setOnClickListener(v -> togglePanels());
         updateModePills();
         NavBar.setup(this, (BottomNavigationView) findViewById(R.id.bottomNav), R.id.nav_map);
 
@@ -350,6 +362,34 @@ public class RouteMapActivity extends AppCompatActivity {
         bg.setColor(Color.parseColor(selected ? "#534AB7" : "#EEEDFE"));
         b.setBackground(bg);
         b.setTextColor(Color.parseColor(selected ? "#FFFFFF" : "#3C3489"));
+    }
+
+    /**
+     * Show the whole map, or bring the panels back.
+     *
+     * The button never hides with them - it is the only route back, and a map tap
+     * cannot serve as one because a single tap already drops the destination pin.
+     */
+    private void togglePanels() {
+        panelsHidden = !panelsHidden;
+        int vis = panelsHidden ? View.GONE : View.VISIBLE;
+        searchCard.setVisibility(vis);
+        routePanel.setVisibility(vis);
+        // Collapsing while the keyboard is up over a search field would leave the
+        // keyboard covering the map it was just asked to reveal.
+        if (panelsHidden) {
+            hideKeyboard();
+            suggestionsList.setVisibility(View.GONE);
+        }
+        mapToggleBtn.setImageResource(
+                panelsHidden ? R.drawable.ic_collapse_map : R.drawable.ic_expand_map);
+        mapToggleBtn.setContentDescription(getString(
+                panelsHidden ? R.string.map_toggle_collapse : R.string.map_toggle_expand));
+    }
+
+    /** Bring the panels back if something needs to be read there. */
+    private void revealPanels() {
+        if (panelsHidden) togglePanels();
     }
 
     // ───────────────────────── my location ─────────────────────────
@@ -578,6 +618,7 @@ public class RouteMapActivity extends AppCompatActivity {
             @Override public void onResponse(@NonNull Call<ApiModels.RouteResponse> c,
                                              @NonNull Response<ApiModels.RouteResponse> r) {
                 progress.setVisibility(View.GONE);
+                revealPanels();
                 if (!r.isSuccessful() || r.body() == null) {
                     info.setText("Couldn't route between those points (they may be outside Edmonton).");
                     return;
@@ -591,6 +632,7 @@ public class RouteMapActivity extends AppCompatActivity {
             }
             @Override public void onFailure(@NonNull Call<ApiModels.RouteResponse> c, @NonNull Throwable t) {
                 progress.setVisibility(View.GONE);
+                revealPanels();
                 info.setText("Can't reach server. Is the backend running and BASE_URL correct?");
             }
         });
@@ -614,6 +656,7 @@ public class RouteMapActivity extends AppCompatActivity {
                     @Override public void onResponse(@NonNull Call<ApiModels.TransitResponse> c,
                                                      @NonNull Response<ApiModels.TransitResponse> r) {
                         progress.setVisibility(View.GONE);
+                        revealPanels();
                         if (r.code() == 503) {
                             // The engine is a separate service. Down is not the same as
                             // "no such trip", so say so and offer the old handoff.
@@ -636,6 +679,7 @@ public class RouteMapActivity extends AppCompatActivity {
                     @Override public void onFailure(@NonNull Call<ApiModels.TransitResponse> c,
                                                     @NonNull Throwable t) {
                         progress.setVisibility(View.GONE);
+                        revealPanels();
                         info.setText("Can't reach server. Is the backend running and BASE_URL correct?");
                     }
                 });

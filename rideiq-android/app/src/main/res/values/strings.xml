@@ -37,6 +37,8 @@
     <string name="seg_transit">🚍 Transit</string>
     <string name="transit_leave_now">🕓 Leave now</string>
     <string name="transit_step_free">♿ Step-free</string>
+    <string name="map_toggle_expand">Hide the panels and show the whole map</string>
+    <string name="map_toggle_collapse">Show the search and route panels again</string>
     <string name="directions_btn">Steps</string>
     <string name="street_view_btn">Street view</string>
     <!-- Fallback handoff to Google Maps, kept for when our own engine is down. -->

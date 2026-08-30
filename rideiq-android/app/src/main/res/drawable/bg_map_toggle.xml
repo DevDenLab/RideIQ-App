@@ -1,0 +1,7 @@
+<!-- Round white chip for the map/panel toggle, so it reads as a control on top
+     of whatever the map happens to be showing underneath it. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <solid android:color="#FFFFFF" />
+    <stroke android:width="1dp" android:color="#DDDDDD" />
+</shape>

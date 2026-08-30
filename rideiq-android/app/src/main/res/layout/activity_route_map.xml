@@ -231,6 +231,24 @@
                     android:text="@string/reset_map" />
             </LinearLayout>
         </LinearLayout>
+        <!-- Hides / restores both floating cards so the map can use the whole
+             screen. It sits on the right edge, vertically centred, because that
+             is the one strip of map never covered by the top or bottom card -
+             and it must stay visible in BOTH states, since it is the only way
+             back. A map tap cannot do this job: single tap already drops the
+             destination pin. -->
+        <ImageButton
+            android:id="@+id/mapToggleBtn"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_gravity="end|center_vertical"
+            android:layout_marginEnd="12dp"
+            android:elevation="8dp"
+            android:scaleType="centerInside"
+            android:src="@drawable/ic_expand_map"
+            android:background="@drawable/bg_map_toggle"
+            android:contentDescription="@string/map_toggle_expand" />
+
     </FrameLayout>
 
     <com.google.android.material.bottomnavigation.BottomNavigationView

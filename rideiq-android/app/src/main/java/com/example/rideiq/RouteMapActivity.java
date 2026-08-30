@@ -218,7 +218,12 @@ public class RouteMapActivity extends AppCompatActivity {
         ((Button) findViewById(R.id.resetBtn)).setOnClickListener(v -> resetMap());
         ((Button) findViewById(R.id.myLocBtn)).setOnClickListener(v -> onMyLocationTapped());
         ((Button) findViewById(R.id.satBtn)).setOnClickListener(v -> toggleSatellite());
-        startBtn.setOnClickListener(v -> { if (navigating) stopTrip(); else startTrip(); });
+        // `navigating` only tracks turn-by-turn. A transit ride lives in the service,
+        // so the button has to consult that too -- otherwise it reads "Stop trip"
+        // and calls startTrip(), restarting the ride instead of ending it.
+        startBtn.setOnClickListener(v -> {
+            if (navigating || TransitRideService.RUNNING) stopTrip(); else startTrip();
+        });
         ((Button) findViewById(R.id.goBtn)).setOnClickListener(v -> onGoTapped());
         ((Button) findViewById(R.id.directionsBtn)).setOnClickListener(v -> openDirections());
         ((Button) findViewById(R.id.streetViewBtn)).setOnClickListener(v -> openStreetView());
@@ -711,7 +716,14 @@ public class RouteMapActivity extends AppCompatActivity {
 
     private void showTransitOptions(List<ApiModels.Itinerary> its) {
         transitOptions = its;
+        // OTP may answer "just walk", and that option often sorts first because it
+        // is shortest. Keep it -- seeing that walking beats waiting is genuinely
+        // useful -- but never let it be the default when the user asked for transit
+        // and a real transit option exists.
         selectedItinerary = 0;
+        for (int i = 0; i < its.size(); i++) {
+            if (!its.get(i).walkOnly) { selectedItinerary = i; break; }
+        }
         routeOptions = new ArrayList<>();     // the car-route cards do not apply here
         buildTransitCards();
         optionsScroll.setVisibility(View.VISIBLE);
@@ -749,10 +761,12 @@ public class RouteMapActivity extends AppCompatActivity {
             lp.setMargins(0, 0, (int) (6 * density), 0);
             card.setLayoutParams(lp);
 
+            // A walk-only option must look like a walk, not like a route card that
+            // mysteriously has no route on it.
             TextView top = new TextView(this);
-            top.setText(routeSummary(it));
+            top.setText(it.walkOnly ? "Walk all the way" : routeSummary(it));
             top.setTextSize(11);
-            top.setTextColor(Color.parseColor("#3C3489"));
+            top.setTextColor(Color.parseColor(it.walkOnly ? "#2E7D32" : "#3C3489"));
             card.addView(top);
 
             TextView dur = new TextView(this);
@@ -763,8 +777,11 @@ public class RouteMapActivity extends AppCompatActivity {
             card.addView(dur);
 
             TextView sub = new TextView(this);
-            String transfers = it.transfers == 0 ? "No transfers"
-                    : it.transfers + (it.transfers == 1 ? " transfer" : " transfers");
+            // "No transfers" is a meaningless boast on a walk.
+            String transfers = it.walkOnly
+                    ? String.format(Locale.US, "%.1f km on foot", it.walkDistanceM / 1000.0)
+                    : (it.transfers == 0 ? "No transfers"
+                       : it.transfers + (it.transfers == 1 ? " transfer" : " transfers"));
             // The fare already accounts for transfer rules, so three buses inside
             // the transfer window shows one fare, not three.
             sub.setText(it.fare == null ? transfers
@@ -1092,6 +1109,14 @@ public class RouteMapActivity extends AppCompatActivity {
 
         ApiModels.Itinerary it = transitOptions.get(
                 Math.min(selectedItinerary, transitOptions.size() - 1));
+        if (it.walkOnly) {
+            // Nothing to ride, so nothing to count down. Starting the service here
+            // would give a permanent notification that never says anything useful.
+            Toast.makeText(this, "That option is walking only - there are no stops "
+                    + "to track. Pick a bus or LRT option for ride guidance.",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
         TransitRideService.ITINERARY = it;
         ContextCompat.startForegroundService(this,
                 new android.content.Intent(this, TransitRideService.class));

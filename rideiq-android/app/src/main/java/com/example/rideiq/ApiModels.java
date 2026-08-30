@@ -156,6 +156,7 @@ public class ApiModels {
         public int transfers;
         @SerializedName("walk_distance_m") public double walkDistanceM;
         public java.util.List<String> routes;         // ["8", "Capital"] for the card
+        @SerializedName("walk_only") public boolean walkOnly;  // no vehicle at all
         public boolean realtime;                      // any ride leg had live data
         public String status;                         // first live punctuality, if any
         public java.util.List<TransitAlert> alerts;   // de-duplicated across legs

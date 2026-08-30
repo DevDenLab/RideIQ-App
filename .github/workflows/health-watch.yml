@@ -1,0 +1,134 @@
+# =============================================================================
+# health-watch: notice when the product is broken, rather than finding out from
+# a user.
+#
+# reconcile-deploy answers "is the deployed commit the one on main?". That is a
+# different question from "does the thing actually work", and the gap between
+# them is where this project's most likely outage lives: the ETS feed carries a
+# feed_end_date, and past it OpenTripPlanner returns NO itineraries at all rather
+# than stale ones. Transit would simply stop working, silently, with a green
+# pipeline and a correctly deployed commit.
+#
+# A failing scheduled workflow emails the repository owner, so failing loudly here
+# IS the alerting mechanism. No extra infrastructure, which for a project this
+# size is the right trade.
+#
+# Checks, in increasing order of "actually proves something":
+#   1. the API answers at all
+#   2. the transit engine is reachable and has a feed loaded
+#   3. a real trip between two known points returns a real itinerary
+#   4. the loaded feed is not about to expire
+# =============================================================================
+
+name: health-watch
+
+on:
+  schedule:
+    - cron: "37 * * * *"      # hourly, offset from reconcile-deploy at :17
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: health-watch
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: API is answering
+        env:
+          HOST: http://${{ secrets.EC2_HOST }}
+        run: |
+          code=$(curl -s -o /tmp/health.json -w '%{http_code}' -m 20 "$HOST/health")
+          cat /tmp/health.json; echo
+          [ "$code" = "200" ] || { echo "::error::/health returned $code"; exit 1; }
+
+      - name: Transit engine is up with a feed loaded
+        env:
+          HOST: http://${{ secrets.EC2_HOST }}
+        run: |
+          curl -s -m 20 "$HOST/transit/status" -o /tmp/otp.json
+          cat /tmp/otp.json; echo
+          python - <<'PY'
+          import json, sys
+          d = json.load(open("/tmp/otp.json"))
+          if not d.get("ok"):
+              print("::error::Transit engine unreachable: %s" % d.get("error"))
+              sys.exit(1)
+          if not d.get("feeds"):
+              print("::error::OTP is up but has no feeds loaded")
+              sys.exit(1)
+          print("OTP ok, feeds:", d["feeds"])
+          PY
+
+      - name: A real trip still returns a real itinerary
+        env:
+          HOST: http://${{ secrets.EC2_HOST }}
+          API_KEY: ${{ secrets.API_KEY }}
+        run: |
+          # Churchill Square -> University of Alberta. Both are served by the LRT
+          # every few minutes, every day, so "no itinerary" here means something is
+          # genuinely wrong rather than that we picked an awkward pair of points.
+          code=$(curl -s -o /tmp/plan.json -w '%{http_code}' -m 40 \
+            -H "X-API-Key: $API_KEY" \
+            "$HOST/transit?lat1=53.5444&lon1=-113.4909&lat2=53.5232&lon2=-113.5263")
+          echo "status $code"
+          [ "$code" = "200" ] || { echo "::error::/transit returned $code"; cat /tmp/plan.json; exit 1; }
+          python - <<'PY'
+          import json, sys
+          d = json.load(open("/tmp/plan.json"))
+          its = d.get("itineraries") or []
+          if not its:
+              print("::error::/transit answered 200 with zero itineraries -- the "
+                    "classic symptom of a graph past its feed_end_date")
+              sys.exit(1)
+          best = its[0]
+          print("ok: %d min, routes %s, fare %s"
+                % (best["duration_min"], best.get("routes"),
+                   (best.get("fare") or {}).get("text")))
+          if all(i.get("walk_only") for i in its):
+              print("::warning::every option is walk-only -- transit may be degraded")
+          PY
+
+      - name: The loaded feed is not about to expire
+        uses: appleboy/ssh-action@v1
+        id: feed
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          capture_stdout: true
+          script: |
+            if [ -f /opt/rideiq/otp/graph-info.json ]; then
+              echo "FEED_END=$(python3 -c "import json;print(json.load(open('/opt/rideiq/otp/graph-info.json')).get('feed_end_date',''))")"
+            else
+              echo "FEED_END="
+            fi
+
+      - name: Fail while there is still time to rebuild
+        env:
+          RAW: ${{ steps.feed.outputs.stdout }}
+        run: |
+          end=$(printf '%s\n' "$RAW" | tr -d '\r' | sed -n 's/^FEED_END=//p' | tail -1)
+          python - "$end" <<'PY'
+          import sys
+          from datetime import date, datetime
+          end = sys.argv[1].strip()
+          if not end:
+              print("::warning::could not read feed_end_date from the host")
+              raise SystemExit(0)
+          left = (datetime.strptime(end, "%Y%m%d").date() - date.today()).days
+          print("feed_end_date %s (%d days out)" % (end, left))
+          # Fail EARLY, not on the day. build-transit-graph runs on the 1st and the
+          # 15th, so a fortnight of warning guarantees at least one scheduled
+          # rebuild before service would actually stop.
+          if left < 14:
+              print("::error::The loaded transit feed expires in %d days. Past "
+                    "feed_end_date OTP returns no itineraries at all. Run "
+                    "build-transit-graph." % left)
+              raise SystemExit(1)
+          PY

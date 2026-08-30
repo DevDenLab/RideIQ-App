@@ -1,0 +1,181 @@
+{
+  "$comment": "The transit path. The app never learns OTP exists - transit_client does the translation.",
+  "meta": {
+    "project": "RideIQ",
+    "title": "Sequence - GET /transit",
+    "version": "1.0",
+    "diagram_type": "UML sequence",
+    "aspect_ratio": "16:9"
+  },
+  "image_prompt": "Draw a clean UML sequence diagram, flat modern style, with five participants: 'Android app', 'FastAPI', 'transit_client.py', 'OpenTripPlanner (private)', 'Redis'. Colour the OpenTripPlanner participant orange. Number every message. Show the app asking for a transit plan, a Redis cache lookup where the clock is rounded to a 5 minute bucket, a GraphQL query to OpenTripPlanner, OTP replying with verbose itineraries, then three self-calls on the transit_client lifeline labelled 'decode polylines', 'total the fare over DISTINCT use ids' and 'compose the leg-by-leg instructions'. End with a dashed response to the phone. Then draw a clearly separated red alt fragment at the bottom spanning FastAPI and OpenTripPlanner labelled 'alt: OTP unreachable' containing a single dashed arrow back to the app labelled '503 - app falls back to the Google Maps handoff'.",
+  "style": {
+    "look": "clean UML-style sequence diagram, flat modern, generous vertical spacing",
+    "conventions": [
+      "Participants across the top as labelled boxes with vertical dashed lifelines.",
+      "Solid arrow = request. Dashed arrow = response.",
+      "Self-call drawn as a small loop back onto the same lifeline.",
+      "Number every message so the reading order is unambiguous.",
+      "Draw alt / opt fragments as a labelled rectangle spanning the lifelines involved."
+    ],
+    "palette": {
+      "client": "#6366F1",
+      "edge": "#0F172A",
+      "api": "#22C55E",
+      "cache": "#EF4444",
+      "db": "#0EA5E9",
+      "ml": "#8B5CF6",
+      "transit": "#E65100",
+      "external": "#64748B"
+    }
+  },
+  "spec": {
+    "participants": [
+      {
+        "id": "app",
+        "label": "Android app",
+        "color": "#6366F1"
+      },
+      {
+        "id": "api",
+        "label": "FastAPI",
+        "color": "#22C55E"
+      },
+      {
+        "id": "tc",
+        "label": "transit_client.py"
+      },
+      {
+        "id": "otp",
+        "label": "OpenTripPlanner (private)",
+        "color": "#E65100"
+      },
+      {
+        "id": "redis",
+        "label": "Redis",
+        "color": "#EF4444"
+      }
+    ],
+    "messages": [
+      {
+        "n": 1,
+        "from": "app",
+        "to": "api",
+        "label": "GET /transit?lat1&lon1&lat2&lon2&depart=now&arrive_by&max_walk_m&wheelchair",
+        "kind": "request"
+      },
+      {
+        "n": 2,
+        "from": "api",
+        "to": "redis",
+        "label": "GET cache key - 'now' rounded to a 5 minute bucket so nearby requests share a result",
+        "kind": "request"
+      },
+      {
+        "n": 3,
+        "from": "redis",
+        "to": "api",
+        "label": "miss",
+        "kind": "response"
+      },
+      {
+        "n": 4,
+        "from": "api",
+        "to": "tc",
+        "label": "plan(...)",
+        "kind": "request"
+      },
+      {
+        "n": 5,
+        "from": "tc",
+        "to": "otp",
+        "label": "POST /otp/gtfs/v1 - GraphQL plan query with date, time, arriveBy, wheelchair, walkReluctance",
+        "kind": "request"
+      },
+      {
+        "n": 6,
+        "from": "otp",
+        "to": "otp",
+        "label": "RAPTOR over the timetable, already delay-adjusted from the live feeds",
+        "kind": "self"
+      },
+      {
+        "n": 7,
+        "from": "otp",
+        "to": "tc",
+        "label": "itineraries: legs, epoch-millis times, encoded polylines, fareProducts, alerts",
+        "kind": "response"
+      },
+      {
+        "n": 8,
+        "from": "tc",
+        "to": "tc",
+        "label": "decode each leg's encoded polyline into [[lat, lon], ...]",
+        "kind": "self"
+      },
+      {
+        "n": 9,
+        "from": "tc",
+        "to": "tc",
+        "label": "total the fare over DISTINCT fare-product use ids, not per leg",
+        "kind": "self"
+      },
+      {
+        "n": 10,
+        "from": "tc",
+        "to": "tc",
+        "label": "convert epoch millis to America/Edmonton clock times; derive punctuality only where a live feed said so",
+        "kind": "self"
+      },
+      {
+        "n": 11,
+        "from": "tc",
+        "to": "tc",
+        "label": "compose leg-by-leg instructions: 'Board LRT Capital toward Century Park at Churchill Station, 11:54'",
+        "kind": "self"
+      },
+      {
+        "n": 12,
+        "from": "tc",
+        "to": "api",
+        "label": "normalised itineraries in the RideIQ leg format",
+        "kind": "response"
+      },
+      {
+        "n": 13,
+        "from": "api",
+        "to": "redis",
+        "label": "SETEX result, 120 s TTL only - a transit plan decays as the bus gets closer",
+        "kind": "request"
+      },
+      {
+        "n": 14,
+        "from": "api",
+        "to": "app",
+        "label": "200 {itineraries: [{duration_min, depart_time, arrive_time, transfers, fare, realtime, alerts, legs, instructions}]}",
+        "kind": "response"
+      }
+    ],
+    "fragments": [
+      {
+        "type": "alt",
+        "label": "OTP unreachable",
+        "covers": [
+          5
+        ],
+        "note": "TransitUnavailable becomes HTTP 503, never a 500. The app shows 'Transit routing is offline' and points at the Maps button. Drive and walk routing are unaffected."
+      },
+      {
+        "type": "alt",
+        "label": "no itinerary found",
+        "covers": [
+          12
+        ],
+        "note": "empty result becomes HTTP 404 - outside the service area, or outside service hours"
+      }
+    ],
+    "annotations": [
+      "The Android app has no idea OpenTripPlanner exists. It receives the same leg vocabulary the driving routes use.",
+      "max_walk_m is enforced as a post-filter, because OTP 2 dropped the hard maxWalkDistance knob. If every option walks slightly too far we return the least-walking one rather than 'no route' - answering 'no service' when service exists is the worse failure."
+    ]
+  }
+}

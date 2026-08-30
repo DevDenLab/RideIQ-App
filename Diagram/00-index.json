@@ -1,0 +1,127 @@
+{
+  "$comment": "Manifest for the RideIQ diagram set. Start here. Each entry is a standalone file you can paste straight into an image model.",
+  "meta": {
+    "project": "RideIQ",
+    "generated": "2026-08-25",
+    "count": 16,
+    "intended_tool": "Google Gemini / Nano Banana Pro (image) or Mermaid (deterministic labels)"
+  },
+  "how_to_use": [
+    "Open one file. Paste its image_prompt as your prompt.",
+    "Paste the spec object underneath with: 'Here is the exact structure - follow every node label and arrow label precisely.'",
+    "Ask for the aspect_ratio named in meta.",
+    "Generate 3 or 4 and pick the cleanest. Image models drift on dense text.",
+    "For anything that must be EXACTLY right (the blue-green swap, the ML map), also produce a Mermaid version - deterministic labels - and use the generated image only as the hero picture."
+  ],
+  "groups": [
+    {
+      "group": "Architecture",
+      "files": [
+        {
+          "file": "01-system-architecture.json",
+          "use": "the hero picture - whole system at a glance"
+        },
+        {
+          "file": "02-deployment-topology.json",
+          "use": "inside the EC2 box: containers, networks, volumes, RAM budget"
+        },
+        {
+          "file": "03-cicd-pipeline.json",
+          "use": "the self-driving pipeline, including the reconciler"
+        },
+        {
+          "file": "04-transit-data-pipeline.json",
+          "use": "open data to live engine, as a conveyor"
+        }
+      ]
+    },
+    {
+      "group": "Sequence / flow",
+      "files": [
+        {
+          "file": "05-seq-ride-quote.json",
+          "use": "POST /quote - the ML money path"
+        },
+        {
+          "file": "06-seq-drive-route.json",
+          "use": "POST /route-latlon - A* plus the ML chain"
+        },
+        {
+          "file": "07-seq-transit-plan.json",
+          "use": "GET /transit - the OTP proxy and its 503 fallback"
+        },
+        {
+          "file": "08-seq-turn-by-turn-nav.json",
+          "use": "the GPS navigation loop and re-route trigger"
+        },
+        {
+          "file": "09-seq-bluegreen-deploy.json",
+          "use": "the zero-downtime swap and its health gate"
+        }
+      ]
+    },
+    {
+      "group": "Algorithms",
+      "files": [
+        {
+          "file": "10-algo-astar.json",
+          "use": "A* - f = g + h, and why the heuristic matters"
+        },
+        {
+          "file": "11-algo-alternative-routes.json",
+          "use": "penalised re-search for route options"
+        },
+        {
+          "file": "12-algo-raptor-vs-astar.json",
+          "use": "THE conceptual diagram - why transit needs RAPTOR"
+        },
+        {
+          "file": "13-algo-ml-map.json",
+          "use": "all 16 ML algorithms mapped to 8 features"
+        },
+        {
+          "file": "14-algo-fare-transfer.json",
+          "use": "the fare trap - $3.00 not $9.00"
+        },
+        {
+          "file": "15-algo-polyline-encoding.json",
+          "use": "encoded polylines"
+        },
+        {
+          "file": "16-algo-realtime-fusion.json",
+          "use": "timetable plus live feeds, and the honesty rule"
+        }
+      ]
+    }
+  ],
+  "also_present": {
+    "algorithms/": "pre-existing per-feature ML JSONs (eta, fare, cancellation-risk, fraud-check, surge-zones, rider-segments, driver-shift, cancellation-causes, routing, _quote-orchestration). Still valid; 13-algo-ml-map.json is the index over them.",
+    "architecture.json / system-architecture.json": "SUPERSEDED by 01-system-architecture.json - they predate the transit engine and the current CI/CD."
+  },
+  "suggested_reading_order": [
+    "01 - what the system is",
+    "12 - the one big idea (time-dependent routing)",
+    "10 - how ordinary routing works",
+    "07 - how a transit request actually flows",
+    "03 - how any of it reaches production"
+  ],
+  "accuracy_note": "Every number in this set was read from the running system or the source, not estimated: 96 MB graph, 291k vertices, 6,573 stops, 37 s build, ~61% trip-update coverage, CAD 3.00 Arc fare. One correction is flagged in 13-algo-ml-map.json - the code says '15 ML algorithms' but PIPELINE lists 16 distinct names.",
+  "files": [
+    "01-system-architecture.json",
+    "02-deployment-topology.json",
+    "03-cicd-pipeline.json",
+    "04-transit-data-pipeline.json",
+    "05-seq-ride-quote.json",
+    "06-seq-drive-route.json",
+    "07-seq-transit-plan.json",
+    "08-seq-turn-by-turn-nav.json",
+    "09-seq-bluegreen-deploy.json",
+    "10-algo-astar.json",
+    "11-algo-alternative-routes.json",
+    "12-algo-raptor-vs-astar.json",
+    "13-algo-ml-map.json",
+    "14-algo-fare-transfer.json",
+    "15-algo-polyline-encoding.json",
+    "16-algo-realtime-fusion.json"
+  ]
+}

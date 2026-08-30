@@ -1,0 +1,156 @@
+{
+  "$comment": "The zero-downtime swap. The health gate is the whole point - traffic never moves until the new colour answers.",
+  "meta": {
+    "project": "RideIQ",
+    "title": "Sequence - blue-green deploy on EC2",
+    "version": "1.0",
+    "diagram_type": "UML sequence",
+    "aspect_ratio": "16:9"
+  },
+  "image_prompt": "Draw a UML sequence diagram with five participants: 'GitHub Actions runner', 'EC2 host (docker)', 'rideiq-green (NEW)', 'nginx', 'rideiq-blue (OLD)'. Number every message. Show: pull the image, start the new colour with no published port, then a labelled loop fragment 'poll /health, up to 30 times, 2 s apart' against the new colour. Then a decision: draw a red alt fragment labelled 'never became healthy' containing 'remove the new container, leave nginx untouched, fail the deploy - the old colour keeps serving', and a green alt labelled 'healthy' containing 'rewrite nginx upstream to the new colour', 'nginx -s reload', 'drain 30 s', 'remove the old container'. Emphasise visually that traffic only moves AFTER the health check passes.",
+  "style": {
+    "look": "clean UML-style sequence diagram, flat modern, generous vertical spacing",
+    "conventions": [
+      "Participants across the top as labelled boxes with vertical dashed lifelines.",
+      "Solid arrow = request. Dashed arrow = response.",
+      "Self-call drawn as a small loop back onto the same lifeline.",
+      "Number every message so the reading order is unambiguous.",
+      "Draw alt / opt fragments as a labelled rectangle spanning the lifelines involved."
+    ],
+    "palette": {
+      "client": "#6366F1",
+      "edge": "#0F172A",
+      "api": "#22C55E",
+      "cache": "#EF4444",
+      "db": "#0EA5E9",
+      "ml": "#8B5CF6",
+      "transit": "#E65100",
+      "external": "#64748B"
+    }
+  },
+  "spec": {
+    "participants": [
+      {
+        "id": "runner",
+        "label": "GitHub Actions runner",
+        "color": "#F59E0B"
+      },
+      {
+        "id": "host",
+        "label": "EC2 host (docker)"
+      },
+      {
+        "id": "new",
+        "label": "rideiq-green (NEW)",
+        "color": "#22C55E"
+      },
+      {
+        "id": "nginx",
+        "label": "nginx (cicd-edge)",
+        "color": "#0F172A"
+      },
+      {
+        "id": "old",
+        "label": "rideiq-blue (OLD)",
+        "color": "#CBD5E1"
+      }
+    ],
+    "messages": [
+      {
+        "n": 1,
+        "from": "runner",
+        "to": "host",
+        "label": "SSH in with the deploy key",
+        "kind": "request"
+      },
+      {
+        "n": 2,
+        "from": "host",
+        "to": "host",
+        "label": "docker pull ghcr.io/devdenlab/rideiq-app:sha-<commit>",
+        "kind": "self"
+      },
+      {
+        "n": 3,
+        "from": "host",
+        "to": "host",
+        "label": "decide which colour is live; the other one becomes the target",
+        "kind": "self"
+      },
+      {
+        "n": 4,
+        "from": "host",
+        "to": "new",
+        "label": "docker run - no published port, joined to appnet",
+        "kind": "request"
+      },
+      {
+        "n": 5,
+        "from": "host",
+        "to": "new",
+        "label": "GET /health inside the container",
+        "kind": "request"
+      },
+      {
+        "n": 6,
+        "from": "new",
+        "to": "host",
+        "label": "200 once the 16 ML models have finished training",
+        "kind": "response"
+      },
+      {
+        "n": 7,
+        "from": "host",
+        "to": "nginx",
+        "label": "write the new upstream config and reload",
+        "kind": "request"
+      },
+      {
+        "n": 8,
+        "from": "nginx",
+        "to": "new",
+        "label": "traffic now flows here",
+        "kind": "request"
+      },
+      {
+        "n": 9,
+        "from": "host",
+        "to": "old",
+        "label": "wait 30 s to drain, then docker rm -f",
+        "kind": "request"
+      },
+      {
+        "n": 10,
+        "from": "host",
+        "to": "host",
+        "label": "docker image prune - reclaim disk",
+        "kind": "self"
+      }
+    ],
+    "fragments": [
+      {
+        "type": "loop",
+        "label": "poll /health up to 30 times, 2 s apart (~60 s budget)",
+        "covers": [
+          5,
+          6
+        ],
+        "note": "the app trains 16 ML models on boot, so a slow start is normal, not a failure"
+      },
+      {
+        "type": "alt",
+        "label": "never became healthy",
+        "covers": [
+          7
+        ],
+        "note": "remove the new container, leave nginx pointing at the old colour, fail the deploy. Zero downtime because traffic never moved."
+      }
+    ],
+    "annotations": [
+      "Traffic only moves AFTER the new colour answers /health. That single ordering is what makes the deploy safe.",
+      "The old colour is not deleted immediately - it drains for 30 seconds so in-flight requests finish.",
+      "Redis is started once and never swapped, so the cache survives every deploy.",
+      "A rollback is the same dance with an older SHA: workflow_dispatch with rollback_sha skips the build and the CI gate entirely."
+    ]
+  }
+}

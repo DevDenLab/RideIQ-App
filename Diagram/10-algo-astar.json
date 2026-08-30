@@ -1,0 +1,112 @@
+{
+  "$comment": "A* as actually implemented in routing.py. The teaching point is the heuristic: it is what makes A* beat Dijkstra.",
+  "meta": {
+    "project": "RideIQ",
+    "title": "A* Search - how drive and walk routes are found",
+    "version": "1.0",
+    "diagram_type": "algorithm explainer",
+    "aspect_ratio": "16:9"
+  },
+  "image_prompt": "Create an educational algorithm poster explaining A* search, flat modern style, 16:9, three panels left to right. LEFT PANEL: a stylised street grid of about 30 dots connected by lines, with a green START pin bottom-left and a red GOAL pin top-right. Colour a fan of dots ORANGE labelled 'frontier - waiting to be explored', a set of dots GREY labelled 'already visited', and highlight one continuous GREEN path from start to goal labelled 'chosen path'. Critically, draw the orange frontier as an elongated teardrop stretching TOWARDS the goal, not a circle, and add a caption 'the heuristic pulls the search toward the goal - this is what makes A* faster than Dijkstra'. MIDDLE PANEL: a large clean formula panel showing 'f(n) = g(n) + h(n)' with three labelled lines underneath: 'g(n) = real distance walked so far, in km', 'h(n) = straight-line haversine distance from n to the goal', 'f(n) = best guess at the total trip through n'. Beside it a tiny globe icon with a straight dashed line between two points labelled 'haversine - great-circle distance, never overestimates, so A* stays optimal'. RIGHT PANEL: a small vertical flowchart: 'pop the lowest f from the priority queue' then a diamond 'is it the goal?' with a YES exit to 'walk the came-from chain backwards to build the path' and a NO exit to 'for each neighbour, if this route is cheaper, record it and push it' looping back to the top. Keep all text horizontal and large enough to read.",
+  "style": {
+    "look": "educational diagram, flat modern, generous whitespace, teaching-poster clarity",
+    "principles": [
+      "Show the mechanism, not just the name. A reader should finish understanding WHY it works.",
+      "Prefer one worked example with real numbers over an abstract restatement.",
+      "Use colour to encode state (frontier / visited / chosen), never for decoration.",
+      "Keep formulas large and readable; put them in their own panel, not inside a node."
+    ],
+    "palette": {
+      "frontier": "#F59E0B",
+      "visited": "#CBD5E1",
+      "chosen": "#22C55E",
+      "goal": "#EF4444",
+      "heuristic": "#8B5CF6",
+      "transit": "#E65100",
+      "ink": "#0F172A"
+    }
+  },
+  "spec": {
+    "problem": "Find the shortest road or footpath route between two real-world points on a graph of 8,000+ Edmonton intersections.",
+    "why_this_algorithm": "Dijkstra explores outwards in every direction equally. A* adds an estimate of the remaining distance, which aims the search at the goal and explores far fewer nodes for the same answer.",
+    "data_structures": [
+      {
+        "name": "open priority queue",
+        "holds": "(f, g, node) tuples, popped smallest-f first",
+        "impl": "Python heapq"
+      },
+      {
+        "name": "g score map",
+        "holds": "best known real cost from start to each node"
+      },
+      {
+        "name": "came-from map",
+        "holds": "each node's predecessor, used to reconstruct the path at the end"
+      }
+    ],
+    "formula": {
+      "main": "f(n) = g(n) + h(n)",
+      "terms": [
+        {
+          "symbol": "g(n)",
+          "meaning": "real distance travelled from the start to n, summed along graph edges, in km"
+        },
+        {
+          "symbol": "h(n)",
+          "meaning": "haversine great-circle distance from n straight to the goal, in km"
+        },
+        {
+          "symbol": "f(n)",
+          "meaning": "best-case total trip length if the route passes through n"
+        }
+      ],
+      "admissibility": "A straight line is never longer than the road route, so h never overestimates. That guarantee is what keeps A* optimal - it will not return a longer path than Dijkstra would."
+    },
+    "steps": [
+      {
+        "n": 1,
+        "label": "Snap",
+        "detail": "Convert both lat/lon points to the nearest graph node, since a tap on the map rarely lands exactly on an intersection."
+      },
+      {
+        "n": 2,
+        "label": "Seed",
+        "detail": "Push the start node with f = h(start), g = 0."
+      },
+      {
+        "n": 3,
+        "label": "Pop",
+        "detail": "Take the node with the smallest f - the most promising candidate so far."
+      },
+      {
+        "n": 4,
+        "label": "Goal test",
+        "detail": "If it is the destination, walk the came-from chain backwards and return the path."
+      },
+      {
+        "n": 5,
+        "label": "Relax neighbours",
+        "detail": "For each neighbour, compute g + edge length. If that beats the best known cost for that neighbour, record the improvement and push it with its new f."
+      },
+      {
+        "n": 6,
+        "label": "Repeat",
+        "detail": "Loop until the goal is popped or the queue empties (no route exists)."
+      }
+    ],
+    "after_the_search": [
+      "Build polyline_latlon from the node coordinates so the phone can draw the line.",
+      "Count turns and derive turn-by-turn steps by comparing the compass bearing before and after each node - a bearing change beyond a threshold becomes 'turn left' or 'slight right', attached to the street name from OSM.",
+      "Hand distance_km to the ML models to get eta_min and fare_usd."
+    ],
+    "complexity": {
+      "time": "O(E log V) with a binary heap",
+      "space": "O(V)",
+      "practical": "milliseconds on the Edmonton graph; both graphs are held in memory in the container"
+    },
+    "annotations": [
+      "The same code serves both modes - only the graph changes: city_graph.json for driving, walk_graph.json for walking.",
+      "A* assumes edge costs never change. That assumption is exactly what breaks for transit, which is why transit needs a different algorithm entirely - see the RAPTOR diagram."
+    ]
+  }
+}

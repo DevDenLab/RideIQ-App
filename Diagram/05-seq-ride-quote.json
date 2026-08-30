@@ -1,0 +1,147 @@
+{
+  "$comment": "The rider-facing money path: one call returns ETA, fare and cancellation risk together.",
+  "meta": {
+    "project": "RideIQ",
+    "title": "Sequence - POST /quote",
+    "version": "1.0",
+    "diagram_type": "UML sequence",
+    "aspect_ratio": "4:3"
+  },
+  "image_prompt": "Draw a clean UML sequence diagram, flat modern style, with five participants across the top: 'Android app', 'nginx :80', 'FastAPI (rideiq-blue)', 'Redis', 'SQLite'. Draw vertical dashed lifelines. Number every message. Show the request travelling right, a self-call on the FastAPI lifeline labelled 'run 3 ML groups', a cache lookup to Redis, an INSERT to SQLite, and a dashed response arrow returning left to the phone carrying the JSON. Put a labelled rectangle fragment around the cache lookup marked 'alt: cache hit returns immediately'.",
+  "style": {
+    "look": "clean UML-style sequence diagram, flat modern, generous vertical spacing",
+    "conventions": [
+      "Participants across the top as labelled boxes with vertical dashed lifelines.",
+      "Solid arrow = request. Dashed arrow = response.",
+      "Self-call drawn as a small loop back onto the same lifeline.",
+      "Number every message so the reading order is unambiguous.",
+      "Draw alt / opt fragments as a labelled rectangle spanning the lifelines involved."
+    ],
+    "palette": {
+      "client": "#6366F1",
+      "edge": "#0F172A",
+      "api": "#22C55E",
+      "cache": "#EF4444",
+      "db": "#0EA5E9",
+      "ml": "#8B5CF6",
+      "transit": "#E65100",
+      "external": "#64748B"
+    }
+  },
+  "spec": {
+    "participants": [
+      {
+        "id": "app",
+        "label": "Android app",
+        "color": "#6366F1"
+      },
+      {
+        "id": "nginx",
+        "label": "nginx :80",
+        "color": "#0F172A"
+      },
+      {
+        "id": "api",
+        "label": "FastAPI (rideiq-blue)",
+        "color": "#22C55E"
+      },
+      {
+        "id": "redis",
+        "label": "Redis",
+        "color": "#EF4444"
+      },
+      {
+        "id": "sqlite",
+        "label": "SQLite",
+        "color": "#0EA5E9"
+      }
+    ],
+    "messages": [
+      {
+        "n": 1,
+        "from": "app",
+        "to": "nginx",
+        "label": "POST /quote {distance, hour, weather, traffic, surge}",
+        "kind": "request"
+      },
+      {
+        "n": 2,
+        "from": "nginx",
+        "to": "api",
+        "label": "proxy_pass to the active colour",
+        "kind": "request"
+      },
+      {
+        "n": 3,
+        "from": "api",
+        "to": "redis",
+        "label": "GET quote hash key",
+        "kind": "request"
+      },
+      {
+        "n": 4,
+        "from": "redis",
+        "to": "api",
+        "label": "miss",
+        "kind": "response"
+      },
+      {
+        "n": 5,
+        "from": "api",
+        "to": "api",
+        "label": "predict_eta - Linear Regression + Random Forest + Neural Network, averaged",
+        "kind": "self"
+      },
+      {
+        "n": 6,
+        "from": "api",
+        "to": "api",
+        "label": "estimate_fare - Random Forest + KNN, using the ETA from step 5",
+        "kind": "self"
+      },
+      {
+        "n": 7,
+        "from": "api",
+        "to": "api",
+        "label": "cancellation_risk - Logistic Regression + Decision Tree + AdaBoost",
+        "kind": "self"
+      },
+      {
+        "n": 8,
+        "from": "api",
+        "to": "sqlite",
+        "label": "INSERT INTO quotes (ts, distance, hour, eta, fare, cancel_risk, instance)",
+        "kind": "request"
+      },
+      {
+        "n": 9,
+        "from": "api",
+        "to": "redis",
+        "label": "SETEX result, 1 h TTL",
+        "kind": "request"
+      },
+      {
+        "n": 10,
+        "from": "api",
+        "to": "app",
+        "label": "200 {eta_min, fare_usd, cancellation_risk, wait_min, instance}",
+        "kind": "response"
+      }
+    ],
+    "fragments": [
+      {
+        "type": "alt",
+        "label": "cache hit",
+        "covers": [
+          3,
+          4
+        ],
+        "note": "on a hit the response returns at step 4 with cached=true and the ML work is skipped entirely"
+      }
+    ],
+    "annotations": [
+      "The chain matters: fare depends on the ETA, so step 6 cannot start until step 5 finishes.",
+      "instance in the response names the colour that served it - handy for confirming a blue-green swap."
+    ]
+  }
+}

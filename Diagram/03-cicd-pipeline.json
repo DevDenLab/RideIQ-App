@@ -1,0 +1,199 @@
+{
+  "$comment": "The self-driving pipeline. Nothing here needs a button pressed. Draw it as a flowchart with decision diamonds.",
+  "meta": {
+    "project": "RideIQ",
+    "title": "Self-Driving CI/CD Pipeline",
+    "version": "1.0",
+    "diagram_type": "flowchart with decision points",
+    "orientation": "left-to-right",
+    "aspect_ratio": "16:9"
+  },
+  "image_prompt": [
+    "Draw a CI/CD pipeline flowchart, left to right, flat modern style, 16:9. Start with a developer icon and a box 'Open a Pull Request'. Arrow into a large green-outlined container labelled 'ci - the gate' holding three parallel boxes: 'backend boots and serves', 'android app compiles', 'workflows are valid (actionlint)'. From that gate draw a decision diamond 'all three green?'. The NO exit goes to a red box 'blocked - branch protection refuses the merge' and stops. The YES exit continues to 'auto-merge: squash, delete branch', then to an orange box 'explicitly dispatch deploy-rideiq' with a small callout bubble reading 'a bot merge does NOT trigger workflows - this dispatch is what closes the loop'. Then to 'build image, push to ghcr.io', then 'SSH to EC2, blue-green swap', ending in a green 'live'. Below the main line draw a separate horizontal lane labelled 'reconcile-deploy - hourly' containing 'read SHA running on EC2', a diamond 'matches main?', a YES exit to 'in sync, do nothing' and a NO exit arrow curving back up into the deploy box. Label every arrow."
+  ],
+  "style": {
+    "look": "flat, modern, professional, whiteboard-clean, generous whitespace",
+    "palette": {
+      "trigger": "#F59E0B",
+      "gate": "#22C55E",
+      "fail": "#EF4444",
+      "deploy": "#0EA5E9",
+      "transit": "#E65100",
+      "neutral": "#64748B"
+    },
+    "typography": "sans-serif; keep all text horizontal; numbers in circles for ordered steps",
+    "rules": [
+      "Green = pass / go. Red = blocked. Orange = automated trigger.",
+      "Every decision diamond must show both labelled exits."
+    ]
+  },
+  "spec": {
+    "triggers": [
+      {
+        "event": "pull_request opened / updated",
+        "starts": "ci"
+      },
+      {
+        "event": "ci completed successfully",
+        "starts": "auto-merge"
+      },
+      {
+        "event": "auto-merge dispatches",
+        "starts": "deploy-rideiq"
+      },
+      {
+        "event": "push to main touching transit/Dockerfile or otp-config/**",
+        "starts": "deploy-transit"
+      },
+      {
+        "event": "schedule: 1st and 15th at 09:00 UTC",
+        "starts": "build-transit-graph"
+      },
+      {
+        "event": "schedule: hourly at :17",
+        "starts": "reconcile-deploy"
+      }
+    ],
+    "nodes": [
+      {
+        "id": "pr",
+        "type": "start",
+        "label": "Pull request opened"
+      },
+      {
+        "id": "ci",
+        "type": "gate",
+        "label": "ci - the gate",
+        "color": "#22C55E",
+        "detail": [
+          "backend boots and serves - boots uvicorn, asserts /quote, /route-latlon, and that /transit degrades to 503 with no OTP",
+          "android app compiles - gradlew assembleDebug, uploads the APK as an artifact",
+          "workflows are valid - actionlint plus JSON config parsing",
+          "16 unit tests on transit_client"
+        ]
+      },
+      {
+        "id": "decide",
+        "type": "decision",
+        "label": "all three checks green?"
+      },
+      {
+        "id": "blocked",
+        "type": "terminal",
+        "label": "Blocked - branch protection refuses the merge",
+        "color": "#EF4444"
+      },
+      {
+        "id": "merge",
+        "type": "action",
+        "label": "auto-merge: squash, delete branch"
+      },
+      {
+        "id": "dispatch",
+        "type": "action",
+        "color": "#F59E0B",
+        "label": "Explicitly dispatch deploy-rideiq",
+        "callout": "A merge performed by GITHUB_TOKEN does NOT start new workflow runs. workflow_dispatch is one of only two exceptions - this dispatch is what closes the loop."
+      },
+      {
+        "id": "build",
+        "type": "action",
+        "label": "Build image, push to ghcr.io"
+      },
+      {
+        "id": "deploy",
+        "type": "action",
+        "label": "SSH to EC2, blue-green swap",
+        "color": "#0EA5E9"
+      },
+      {
+        "id": "live",
+        "type": "terminal",
+        "label": "Live in production",
+        "color": "#22C55E"
+      },
+      {
+        "id": "rec_read",
+        "type": "action",
+        "label": "reconcile-deploy (hourly): read the SHA running on EC2"
+      },
+      {
+        "id": "rec_decide",
+        "type": "decision",
+        "label": "matches main?"
+      },
+      {
+        "id": "rec_ok",
+        "type": "terminal",
+        "label": "In sync - do nothing"
+      }
+    ],
+    "connections": [
+      {
+        "from": "pr",
+        "to": "ci",
+        "label": "triggers"
+      },
+      {
+        "from": "ci",
+        "to": "decide",
+        "label": ""
+      },
+      {
+        "from": "decide",
+        "to": "blocked",
+        "label": "NO"
+      },
+      {
+        "from": "decide",
+        "to": "merge",
+        "label": "YES"
+      },
+      {
+        "from": "merge",
+        "to": "dispatch",
+        "label": "then"
+      },
+      {
+        "from": "dispatch",
+        "to": "build",
+        "label": "workflow_dispatch"
+      },
+      {
+        "from": "build",
+        "to": "deploy",
+        "label": "image ready"
+      },
+      {
+        "from": "deploy",
+        "to": "live",
+        "label": "health check passed"
+      },
+      {
+        "from": "rec_read",
+        "to": "rec_decide",
+        "label": ""
+      },
+      {
+        "from": "rec_decide",
+        "to": "rec_ok",
+        "label": "YES"
+      },
+      {
+        "from": "rec_decide",
+        "to": "deploy",
+        "label": "NO - production has drifted, redeploy"
+      }
+    ],
+    "escape_hatches": [
+      "Mark a PR as draft and it will not be merged.",
+      "Add the label 'hold' and it will not be merged.",
+      "enforce_admins is false, so the owner can still push directly to main in an emergency."
+    ],
+    "annotations": [
+      "The safety lives in branch protection on main, not in the auto-merge workflow. Weaken the required checks and auto-merge silently becomes 'merge everything'.",
+      "ci is mostly a smoke test. Green means 'nothing is obviously broken', not 'this works'.",
+      "The reconciler exists because there are several ways to end up deployed-but-not-really: a queued merge, a half-failed deploy, a direct admin push, a host that restarted onto an old image. Asking 'does prod match main?' on a timer covers all of them at once."
+    ]
+  }
+}

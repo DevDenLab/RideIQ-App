@@ -88,6 +88,31 @@ jobs:
         working-directory: rideiq-backend
         run: python -m unittest discover -s tests -v
 
+      - name: API key gate
+        working-directory: rideiq-backend
+        env:
+          API_KEY: ci-test-key
+        run: |
+          # Boot a second instance WITH a key set, and prove the gate both blocks
+          # and lets through. The first instance above runs without a key, which is
+          # the other half of the contract: unset API_KEY must disable the check so
+          # local development stays frictionless.
+          python -m uvicorn app:app --host 127.0.0.1 --port 8097 &
+          for _ in $(seq 1 60); do
+            curl -sf -m 2 http://127.0.0.1:8097/health >/dev/null && break
+            sleep 2
+          done
+          check() {
+            got=$(curl -s -o /dev/null -w '%{http_code}' "${@:3}")
+            echo "  $1 -> $got (want $2)"
+            [ "$got" = "$2" ] || { echo "FAILED: $1"; exit 1; }
+          }
+          check "health, no key"  200 http://127.0.0.1:8097/health
+          check "docs, no key"    200 http://127.0.0.1:8097/docs
+          check "quote, no key"   401 -X POST http://127.0.0.1:8097/quote -H 'Content-Type: application/json' -d '{"distance":5}'
+          check "quote, bad key"  401 -X POST http://127.0.0.1:8097/quote -H 'X-API-Key: nope' -H 'Content-Type: application/json' -d '{"distance":5}'
+          check "quote, good key" 200 -X POST http://127.0.0.1:8097/quote -H 'X-API-Key: ci-test-key' -H 'Content-Type: application/json' -d '{"distance":5}'
+
   android:
     name: android app compiles
     runs-on: ubuntu-latest

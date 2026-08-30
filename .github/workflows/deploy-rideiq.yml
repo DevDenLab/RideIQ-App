@@ -156,6 +156,7 @@ jobs:
               -e DB_PATH=/data/rideiq.db \
               -e INSTANCE_ID="$NEW" \
               -e OTP_URL=http://rideiq-otp:8080 \
+              -e API_KEY='${{ secrets.API_KEY }}' \
               -v rideiq_data:/data \
               "$REF"
 
@@ -180,10 +181,28 @@ jobs:
 
             # Write nginx config pointing at the NEW color.
             cat > /tmp/default.conf <<EOF
+            # Per-IP rate limits applied at the edge, so abuse never reaches Python
+            # or the JVM. /transit gets its own, much tighter, zone because it is by
+            # far the most expensive endpoint -- every call runs a RAPTOR search.
+            limit_req_zone \$binary_remote_addr zone=api:10m rate=2r/s;
+            limit_req_zone \$binary_remote_addr zone=transit:10m rate=20r/m;
+            limit_req_status 429;
+
             upstream app { server ${NEW_NAME}:8000; }
             server {
               listen 80;
+
+              location /transit {
+                limit_req zone=transit burst=10 nodelay;
+                proxy_pass http://app;
+                proxy_set_header Host \$host;
+                proxy_set_header X-Real-IP \$remote_addr;
+                proxy_read_timeout 60s;
+              }
+
               location / {
+                # burst absorbs the autocomplete flurry while typing an address.
+                limit_req zone=api burst=30 nodelay;
                 proxy_pass http://app;
                 proxy_set_header Host \$host;
                 proxy_set_header X-Real-IP \$remote_addr;

@@ -34,9 +34,42 @@ REDIS_URL = os.environ.get("REDIS_URL")
 CACHE_TTL = int(os.environ.get("CACHE_TTL", "3600"))
 INSTANCE = os.environ.get("INSTANCE_ID", "api-1")
 
+API_KEY = os.environ.get("API_KEY", "").strip()
+# Browsers are the only thing CORS constrains, and the only client here is a
+# native Android app, which CORS does not apply to. So the default is "no browser
+# origin", not "*" — set ALLOWED_ORIGINS if a web client ever appears.
+ALLOWED_ORIGINS = [o for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o]
+
 app = FastAPI(title="RideIQ API", version="1.0",
-              description="Ride-hailing platform brain — 15 ML algorithms behind real features.")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+              description="Ride-hailing platform brain — 16 ML algorithms behind real features.")
+app.add_middleware(CORSMiddleware, allow_origins=ALLOWED_ORIGINS,
+                   allow_methods=["*"], allow_headers=["*"])
+
+
+# Endpoints anyone may call without a key: the load balancer's health probe, and
+# the OpenAPI docs, which are the point of a portfolio project.
+OPEN_PATHS = {"/health", "/metrics", "/docs", "/openapi.json", "/redoc", "/"}
+
+
+@app.middleware("http")
+async def require_api_key(request, call_next):
+    """Gate the expensive endpoints behind a shared key.
+
+    Be clear about what this is and is not. The key ships inside a public APK, so
+    anyone determined can extract it — this is not authentication, and calling it
+    that would be a lie. What it does do is stop casual scraping and drive-by
+    scripts, and it gives us something to rotate if a key does leak. The real
+    protection against abuse is the per-IP rate limit at nginx, in front of this.
+
+    Unset API_KEY disables the check entirely, so local development and CI keep
+    working without ceremony.
+    """
+    if API_KEY and request.url.path not in OPEN_PATHS:
+        if request.headers.get("X-API-Key") != API_KEY:
+            from fastapi.responses import JSONResponse
+            return JSONResponse({"detail": "missing or invalid X-API-Key"},
+                                status_code=401)
+    return await call_next(request)
 
 # ---- cache ----
 _local, _redis = OrderedDict(), None

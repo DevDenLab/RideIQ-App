@@ -9,9 +9,19 @@ android {
         applicationId "com.example.rideiq"
         minSdk 24
         targetSdk 34
+
+        // Supplied at build time; empty locally and in CI, which is fine because
+        // the backend only enforces the key when API_KEY is set on the server.
+        buildConfigField "String", "RIDEIQ_API_KEY",
+                "\"" + (project.findProperty("rideiqApiKey") ?: "") + "\""
+
         versionCode 1
         versionName "1.0"
     }
+    buildFeatures {
+        buildConfig true      // AGP 8 no longer generates BuildConfig by default
+    }
+
     buildTypes {
         release {
             minifyEnabled false

@@ -180,6 +180,44 @@ public class TransitProgressTest {
         assertNull(st.leg);
     }
 
+    // ── am I on the right bus? ─────────────────────────────────────────────
+
+    private static ApiModels.Vehicle vehicle(double lat, double lon) {
+        ApiModels.Vehicle v = new ApiModels.Vehicle();
+        v.lat = lat; v.lon = lon; v.vehicleId = "1:2503"; v.label = "4752";
+        return v;
+    }
+
+    @Test public void nearAReportedVehicle_isNotAWrongBus() {
+        List<ApiModels.Vehicle> vs = new ArrayList<>();
+        vs.add(vehicle(53.478300, -113.486000));      // ~10 m away
+        assertFalse(TransitProgress.looksLikeWrongVehicle(vs, 53.478267, -113.485962));
+    }
+
+    @Test public void farFromEveryVehicle_looksLikeAWrongBus() {
+        List<ApiModels.Vehicle> vs = new ArrayList<>();
+        vs.add(vehicle(53.544000, -113.492000));      // several km north
+        assertTrue(TransitProgress.looksLikeWrongVehicle(vs, 53.465572, -113.428895));
+    }
+
+    @Test public void noVehicleData_neverAccusesTheRider() {
+        // The single most important case. ETS reports ~98% of vehicles, not 100%,
+        // and the feed can drop entirely. Absent evidence is not evidence -- a
+        // companion that cries wolf gets ignored at the moment it matters.
+        assertFalse(TransitProgress.looksLikeWrongVehicle(null, 53.5, -113.5));
+        assertFalse(TransitProgress.looksLikeWrongVehicle(
+                new ArrayList<ApiModels.Vehicle>(), 53.5, -113.5));
+        assertEquals(-1, TransitProgress.metresToNearestVehicle(null, 53.5, -113.5), 0.001);
+    }
+
+    @Test public void theNearestVehicleIsTheOneMeasured() {
+        List<ApiModels.Vehicle> vs = new ArrayList<>();
+        vs.add(vehicle(53.544000, -113.492000));      // far
+        vs.add(vehicle(53.478300, -113.486000));      // near
+        double d = TransitProgress.metresToNearestVehicle(vs, 53.478267, -113.485962);
+        assertTrue("expected the near vehicle, got " + d + " m", d < 100);
+    }
+
     // ── the geometry underneath it all ─────────────────────────────────────
 
     @Test public void metresMatchesAKnownDistance() {

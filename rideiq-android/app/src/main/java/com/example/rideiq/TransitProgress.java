@@ -22,6 +22,14 @@ public final class TransitProgress {
     /** How close counts as "you are at this stop" rather than approaching it. */
     private static final double AT_STOP_M = 60;
 
+    /**
+     * How far from every live vehicle on the route before we suspect the rider is
+     * not on it. Generous on purpose: a GPS fix drifts, a bus reports its position
+     * every 30 seconds, and at 50 km/h that is 400 m of travel between reports. Cry
+     * wolf here and the rider stops believing anything the app says.
+     */
+    private static final double OFF_VEHICLE_M = 700;
+
     /** Where the rider is now, and what they should be told. */
     public static class State {
         public int legIndex = -1;
@@ -50,6 +58,35 @@ public final class TransitProgress {
     }
 
     private TransitProgress() { }
+
+    /**
+     * Is the rider plausibly aboard one of these vehicles?
+     *
+     * The stop countdown cannot tell riding the 523 apart from driving beside it:
+     * it only matches position against the planned stop sequence. Live vehicle
+     * positions can, and they are the half of GTFS-realtime that ETS publishes
+     * well -- ~98% coverage, against ~61% for trip updates.
+     *
+     * Returns the distance to the nearest reported vehicle, or -1 when there is
+     * nothing to compare against. A -1 must never be treated as "wrong bus":
+     * absent data is not evidence.
+     */
+    public static double metresToNearestVehicle(List<ApiModels.Vehicle> vehicles,
+                                                double lat, double lon) {
+        if (vehicles == null || vehicles.isEmpty()) return -1;
+        double best = Double.MAX_VALUE;
+        for (ApiModels.Vehicle v : vehicles) {
+            best = Math.min(best, metres(lat, lon, v.lat, v.lon));
+        }
+        return best;
+    }
+
+    /** True only when we have positions AND the rider is far from all of them. */
+    public static boolean looksLikeWrongVehicle(List<ApiModels.Vehicle> vehicles,
+                                                double lat, double lon) {
+        double d = metresToNearestVehicle(vehicles, lat, lon);
+        return d >= 0 && d > OFF_VEHICLE_M;
+    }
 
     /** "Bus 055 toward West Edmonton Mall" for the next ride after legIndex. */
     private static String nextRideLabel(ApiModels.Itinerary itinerary, int legIndex) {

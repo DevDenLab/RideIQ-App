@@ -108,7 +108,7 @@ query Plan($from: InputCoordinates!, $to: InputCoordinates!, $date: String!,
           arrival { estimated { delay } }
         }
         route { shortName longName mode color textColor }
-        trip { tripHeadsign }
+        trip { tripHeadsign gtfsId pattern { code } }
         legGeometry { points }
         alerts { alertHeaderText alertDescriptionText alertSeverityLevel alertEffect }
         stopCalls { stopLocation { ... on Stop { name lat lon code } } }
@@ -153,6 +153,41 @@ def health():
         return {"ok": True, "url": OTP_URL, "feeds": [f["feedId"] for f in feeds]}
     except Exception as e:
         return {"ok": False, "url": OTP_URL, "error": str(e)}
+
+
+VEHICLES_QUERY = """
+query Vehicles($id: String!) {
+  pattern(id: $id) {
+    code
+    route { shortName }
+    vehiclePositions { vehicleId label lat lon heading speed lastUpdate }
+  }
+}
+"""
+
+
+def vehicles(pattern_code):
+    """Where the vehicles on one pattern actually are, right now.
+
+    This is the half of GTFS-realtime that ETS publishes well: vehicle positions
+    apply at ~98%, against ~61% for trip updates. So "is a 523 near me" is a
+    question we can answer far more reliably than "is the 523 running late".
+    """
+    data = _post(VEHICLES_QUERY, {"id": pattern_code})
+    pattern = data.get("pattern") or {}
+    out = []
+    for v in pattern.get("vehiclePositions") or []:
+        if v.get("lat") is None or v.get("lon") is None:
+            continue
+        out.append({"vehicle_id": v.get("vehicleId"),
+                    "label": v.get("label"),
+                    "lat": v["lat"], "lon": v["lon"],
+                    "heading": v.get("heading"),
+                    "speed": v.get("speed"),
+                    "last_update": v.get("lastUpdate")})
+    return {"pattern": pattern.get("code") or pattern_code,
+            "route": (pattern.get("route") or {}).get("shortName"),
+            "vehicles": out}
 
 
 # ── realtime ───────────────────────────────────────────────────────────────
@@ -324,6 +359,10 @@ def _leg(raw, tz):
         # Every stop the vehicle calls at on this leg, boarding first and alighting
         # last. Without this the app can tell you to ride bus 8 but not where you
         # are on it -- no "next stop", no "get off after this one".
+        # The pattern is what live vehicles are reported against, so the app needs
+        # it to ask "is there actually a 523 near me right now".
+        leg["pattern_code"] = ((trip.get("pattern") or {}).get("code"))
+        leg["trip_id"] = trip.get("gtfsId")
         leg["stops"] = _stops(raw.get("stopCalls"))
         leg["stop_count"] = max(0, len(leg["stops"]) - 1)   # rides between stops
         for end in ("from", "to"):

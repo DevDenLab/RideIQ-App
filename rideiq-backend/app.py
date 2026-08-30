@@ -390,6 +390,34 @@ def transit(lat1: float, lon1: float, lat2: float, lon2: float,
     return {**out, "cached": False, "instance": INSTANCE}
 
 
+@app.get("/transit/vehicles")
+def transit_vehicles(pattern: str):
+    """Where the vehicles on one pattern are right now.
+
+    The app uses this during a ride to answer a question the stop countdown
+    cannot: are you actually on the vehicle you planned to be on? Position
+    matching against the planned stop sequence alone cannot tell riding the 523
+    apart from driving beside it.
+
+    Cached for only 15 s -- shorter than OTP's own 30 s poll, so the app never
+    sees data staler than the engine has.
+    """
+    METRICS["requests"] += 1
+    key = "tv:%s" % pattern
+    hit = cache_get(key)
+    if hit:
+        METRICS["cache_hits"] += 1
+        return {**hit, "cached": True, "instance": INSTANCE}
+    try:
+        out = T.vehicles(pattern)
+    except T.TransitUnavailable as e:
+        raise HTTPException(503, str(e))
+    except RuntimeError as e:
+        raise HTTPException(502, str(e))
+    cache_set(key, out, ttl=15)
+    return {**out, "cached": False, "instance": INSTANCE}
+
+
 @app.get("/transit/status")
 def transit_status():
     """Is the transit engine reachable, and which feeds did it load?

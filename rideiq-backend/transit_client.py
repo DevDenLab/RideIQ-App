@@ -377,6 +377,10 @@ def _itinerary(raw, tz):
         "transfers": max(0, len(rides) - 1),
         "walk_distance_m": round(raw.get("walkDistance") or 0),
         "routes": [l.get("route") for l in rides if l.get("route")],
+        # OTP legitimately answers "just walk" when that beats waiting for a bus.
+        # It is a useful answer, but it is not a transit plan, and the app must be
+        # able to say so rather than showing a route card with no route on it.
+        "walk_only": not rides,
         # True only when a live feed backed at least one ride on this trip.
         "realtime": any(l.get("realtime") for l in rides),
         "status": next((l["status"] for l in rides if l.get("status")), None),

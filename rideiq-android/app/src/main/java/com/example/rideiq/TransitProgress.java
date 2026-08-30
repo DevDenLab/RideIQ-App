@@ -51,6 +51,21 @@ public final class TransitProgress {
 
     private TransitProgress() { }
 
+    /** "Bus 055 toward West Edmonton Mall" for the next ride after legIndex. */
+    private static String nextRideLabel(ApiModels.Itinerary itinerary, int legIndex) {
+        for (int li = legIndex + 1; li < itinerary.legs.size(); li++) {
+            ApiModels.TransitLeg leg = itinerary.legs.get(li);
+            if (!leg.isRide()) continue;
+            String label = ((leg.modeLabel != null ? leg.modeLabel : leg.mode)
+                    + " " + (leg.route == null ? "" : leg.route)).trim();
+            if (leg.headsign != null && !leg.headsign.isEmpty()) {
+                label += " toward " + leg.headsign;
+            }
+            return label;
+        }
+        return "your next connection";
+    }
+
     public static double metres(double lat1, double lon1, double lat2, double lon2) {
         double dLat = Math.toRadians(lat2 - lat1);
         double dLon = Math.toRadians(lon2 - lon1);
@@ -118,10 +133,14 @@ public final class TransitProgress {
         if (st.stopsRemaining <= 0) {
             st.arrived = lastRide;
             st.headline = "Get off here - " + st.alightStop.name;
-            st.detail = lastRide
-                    ? "Then walk to your destination"
-                    : "Transfer next: continue to the following leg";
-            st.alert = "Get off now at " + st.alightStop.name;
+            // Name the connection rather than saying "the following leg". At the
+            // moment you step off a bus, "Transfer to Bus 055" is the whole
+            // question you have; a generic phrase makes the rider go and look.
+            String next = lastRide ? null : nextRideLabel(itinerary, st.legIndex);
+            st.detail = lastRide ? "Then walk to your destination"
+                                 : "Transfer to " + next;
+            st.alert = lastRide ? "Get off now at " + st.alightStop.name
+                                : "Get off at " + st.alightStop.name + ", then take " + next;
             st.alertKey = "off:" + st.legIndex;
             return st;
         }

@@ -543,6 +543,9 @@ public class RouteMapActivity extends AppCompatActivity {
             return;
         }
         hideKeyboard();
+        // The suggestion list has served its purpose once Route is pressed; leaving
+        // it open wedges 160dp of empty white between the two panels.
+        suggestionsList.setVisibility(View.GONE);
         if (!sTxt.isEmpty()) geocodeToPin(sTxt, true);
         if (!dTxt.isEmpty()) geocodeToPin(dTxt, false);
     }

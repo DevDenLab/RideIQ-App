@@ -111,6 +111,7 @@ query Plan($from: InputCoordinates!, $to: InputCoordinates!, $date: String!,
         trip { tripHeadsign }
         legGeometry { points }
         alerts { alertHeaderText alertDescriptionText alertSeverityLevel alertEffect }
+        stopCalls { stopLocation { ... on Stop { name lat lon code } } }
         fareProducts {
           id
           product {
@@ -258,6 +259,25 @@ def _fare(legs_raw):
     }
 
 
+def _stops(stop_calls):
+    """Flatten OTP's stopCalls into the stop sequence for one ride leg.
+
+    stopLocation is a GraphQL union (Stop / Location / LocationGroup); only Stop
+    carries a name and coordinates, so anything else is skipped rather than
+    turned into a nameless marker on the map.
+    """
+    out = []
+    for call in stop_calls or []:
+        place = call.get("stopLocation") or {}
+        if not place.get("name"):
+            continue
+        out.append({"name": place["name"],
+                    "code": place.get("code"),
+                    "lat": place.get("lat"),
+                    "lon": place.get("lon")})
+    return out
+
+
 # ── normalisation ──────────────────────────────────────────────────────────
 def _clock(ms, tz):
     dt = datetime.fromtimestamp(ms / 1000.0, tz)
@@ -301,6 +321,11 @@ def _leg(raw, tz):
         leg["delay_s"] = delay
         leg["status"] = _delay_text(delay) if leg["realtime"] else None
         leg["alerts"] = _alerts(raw.get("alerts"))
+        # Every stop the vehicle calls at on this leg, boarding first and alighting
+        # last. Without this the app can tell you to ride bus 8 but not where you
+        # are on it -- no "next stop", no "get off after this one".
+        leg["stops"] = _stops(raw.get("stopCalls"))
+        leg["stop_count"] = max(0, len(leg["stops"]) - 1)   # rides between stops
         for end in ("from", "to"):
             stop = (raw.get(end) or {}).get("stop") or {}
             code = stop.get("code") or stop.get("platformCode")

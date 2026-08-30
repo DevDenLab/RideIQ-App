@@ -7,6 +7,14 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
+    <!-- Riding guidance keeps running with the phone in a pocket, which is the
+         only way "get off at the next stop" is any use. That needs a foreground
+         service, and on Android 13+ an explicit permission to post the
+         notification that service is required to show. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <application
         android:allowBackup="true"
         android:label="RideIQ"
@@ -21,5 +29,10 @@
         <activity android:name=".MainActivity" android:exported="false" android:label="Insights" />
         <activity android:name=".ProfileActivity" android:exported="false" android:label="Profile" />
         <activity android:name=".DirectionsActivity" android:exported="false" android:label="Directions" />
+
+        <service
+            android:name=".TransitRideService"
+            android:exported="false"
+            android:foregroundServiceType="location" />
     </application>
 </manifest>

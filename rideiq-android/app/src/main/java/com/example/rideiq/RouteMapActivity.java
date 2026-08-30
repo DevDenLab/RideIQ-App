@@ -82,18 +82,23 @@ public class RouteMapActivity extends AppCompatActivity {
     private static final int GREEN = Color.parseColor("#2E7D32");
     private static final int RED = Color.parseColor("#C62828");
     private static final int REQ_LOCATION = 101;
+    private static final int REQ_NOTIFICATIONS = 102;
 
     // Navigation tuning (metres).
     private static final float ANNOUNCE_AHEAD_M = 200f;   // pre-warn distance
     private static final float MANEUVER_HIT_M = 30f;      // "do it now" distance
     private static final float OFF_ROUTE_M = 80f;         // trigger reroute beyond this
 
+    // OpenStreetMap's own tiles. We used CARTO's free raster basemap until it began
+    // requiring an API key in August 2026 -- and it does not fail loudly, it returns
+    // HTTP 200 with every tile watermarked "API KEY REQUIRED", so nothing in the app
+    // errors or logs. Getting a key would only buy time: CARTO is retiring the raster
+    // endpoint in favour of vector tiles, so this moves off it entirely rather than
+    // onto a deprecated path.
     private static final XYTileSource STREET = new XYTileSource(
-            "CartoPositron", 0, 20, 256, ".png",
-            new String[]{"https://a.basemaps.cartocdn.com/light_all/",
-                         "https://b.basemaps.cartocdn.com/light_all/",
-                         "https://c.basemaps.cartocdn.com/light_all/"},
-            "© OpenStreetMap contributors, © CARTO");
+            "OpenStreetMap", 0, 19, 256, ".png",
+            new String[]{"https://tile.openstreetmap.org/"},
+            "© OpenStreetMap contributors");
 
     private static final OnlineTileSourceBase ESRI_SAT = new OnlineTileSourceBase(
             "EsriWorldImagery", 0, 19, 256, "",
@@ -175,7 +180,9 @@ public class RouteMapActivity extends AppCompatActivity {
     protected void onCreate(Bundle s) {
         super.onCreate(s);
         Configuration.getInstance().load(this, PreferenceManager.getDefaultSharedPreferences(this));
-        Configuration.getInstance().setUserAgentValue(getPackageName());
+        // OSM's tile usage policy requires a User-Agent that identifies the app,
+        // not a generic library default -- anonymous bulk clients get blocked.
+        Configuration.getInstance().setUserAgentValue("RideIQ/1.0 (" + getPackageName() + ")");
 
         setContentView(R.layout.activity_route_map);
         setTitle("Route map");
@@ -259,6 +266,12 @@ public class RouteMapActivity extends AppCompatActivity {
     @Override protected void onResume() {
         super.onResume();
         map.onResume();
+        // A ride can outlive this screen, so the button has to reflect the
+        // service, not a local flag.
+        if (TransitRideService.RUNNING) {
+            startBtn.setText(R.string.stop_trip);
+            startBtn.setEnabled(true);
+        }
         if (myLocation != null && hasLocationPermission()) myLocation.enableMyLocation();
     }
 
@@ -463,6 +476,17 @@ public class RouteMapActivity extends AppCompatActivity {
             } else {
                 Toast.makeText(this, R.string.location_needed, Toast.LENGTH_LONG).show();
                 info.setText("Tap the map to set your pickup, then tap again for the drop-off.");
+            }
+        } else if (req == REQ_NOTIFICATIONS) {
+            if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) {
+                startTransitRide();          // the user came back to say yes; carry on
+            } else {
+                // Refusing is legitimate, but a muted ride companion is worth
+                // saying out loud rather than letting them wonder why nothing
+                // ever appeared.
+                Toast.makeText(this, "Without notifications the ride can still be "
+                        + "tracked, but you won't be told when to get off.",
+                        Toast.LENGTH_LONG).show();
             }
         }
     }
@@ -821,10 +845,12 @@ public class RouteMapActivity extends AppCompatActivity {
         if (pickupMarker != null) { map.getOverlays().remove(pickupMarker); map.getOverlays().add(pickupMarker); }
         if (dropoffMarker != null) { map.getOverlays().remove(dropoffMarker); map.getOverlays().add(dropoffMarker); }
 
-        // No voice navigation for transit in v1: the plan is schedule-based, not
-        // turn-based, so there is nothing to announce at a maneuver.
+        // There are no turn-by-turn maneuvers on a transit plan, so navSteps stays
+        // empty - but "Start trip" is now enabled, because riding guidance is a
+        // different job from turn announcements: it tracks which stop you are at
+        // and tells you when to get off.
         navSteps = new ArrayList<>();
-        startBtn.setEnabled(false);
+        startBtn.setEnabled(true);
 
         StringBuilder head = new StringBuilder(String.format(Locale.US,
                 "%s\n%d min  ·  depart %s, arrive %s  ·  %s",
@@ -1041,7 +1067,44 @@ public class RouteMapActivity extends AppCompatActivity {
         @Override public void onProviderDisabled(@NonNull String provider) { }
     };
 
+    /**
+     * Hand the selected itinerary to the foreground service and let it ride along.
+     *
+     * Guidance has to survive the screen going off and the app going to the
+     * background - that is the whole point - so the work happens in a service, not
+     * here.
+     */
+    private void startTransitRide() {
+        if (transitOptions == null || transitOptions.isEmpty()) {
+            Toast.makeText(this, "Plan a transit trip first.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (!hasLocationPermission()) { onMyLocationTapped(); return; }
+        // Android 13+ will silently drop every notification without this, which
+        // would leave the service running and completely mute.
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU
+                && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                   != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this,
+                    new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQ_NOTIFICATIONS);
+            return;
+        }
+
+        ApiModels.Itinerary it = transitOptions.get(
+                Math.min(selectedItinerary, transitOptions.size() - 1));
+        TransitRideService.ITINERARY = it;
+        ContextCompat.startForegroundService(this,
+                new android.content.Intent(this, TransitRideService.class));
+
+        startBtn.setText(R.string.stop_trip);
+        navBanner.setVisibility(View.VISIBLE);
+        navBanner.setText("Riding " + routeSummary(it) + " - watch for the notification");
+        Toast.makeText(this, "Ride guidance on. You can lock the screen.",
+                Toast.LENGTH_LONG).show();
+    }
+
     private void startTrip() {
+        if ("transit".equals(travelMode)) { startTransitRide(); return; }
         if (navSteps == null || navSteps.isEmpty()) {
             Toast.makeText(this, "Set a destination first.", Toast.LENGTH_SHORT).show();
             return;
@@ -1062,6 +1125,12 @@ public class RouteMapActivity extends AppCompatActivity {
     }
 
     private void stopTrip() {
+        if (TransitRideService.RUNNING) {
+            stopService(new android.content.Intent(this, TransitRideService.class));
+            startBtn.setText(R.string.start_trip);
+            navBanner.setVisibility(View.GONE);
+            return;
+        }
         navigating = false;
         startBtn.setText(R.string.start_trip);
         navBanner.setVisibility(View.GONE);

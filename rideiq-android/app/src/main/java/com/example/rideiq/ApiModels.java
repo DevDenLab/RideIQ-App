@@ -113,6 +113,8 @@ public class ApiModels {
         @SerializedName("duration_min") public int durationMin;
         @SerializedName("polyline_latlon")
         public java.util.List<java.util.List<Double>> polylineLatlon;
+        @SerializedName("pattern_code") public String patternCode;  // live-vehicle key
+        @SerializedName("trip_id") public String tripId;
         /** Every stop this vehicle calls at: boarding first, alighting last. */
         public java.util.List<TransitStop> stops;
         @SerializedName("stop_count") public int stopCount;
@@ -163,6 +165,20 @@ public class ApiModels {
         public TransitFare fare;                      // null if the feed prices nothing
         public java.util.List<TransitLeg> legs;
         public java.util.List<String> instructions;   // ready-made lines for the list
+    }
+
+    /** A vehicle reported live on a pattern. */
+    public static class Vehicle {
+        @SerializedName("vehicle_id") public String vehicleId;
+        public String label;          // the fleet number painted on the bus
+        public double lat;
+        public double lon;
+    }
+
+    public static class VehiclesResponse {
+        public String pattern;
+        public String route;
+        public java.util.List<Vehicle> vehicles;
     }
 
     public static class TransitResponse {

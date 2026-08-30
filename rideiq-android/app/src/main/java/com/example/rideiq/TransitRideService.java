@@ -62,6 +62,17 @@ public class TransitRideService extends Service {
     private int furthestLeg = 0;
     private final Set<String> announced = new HashSet<>();
 
+    // Live vehicle tracking. Positions are refreshed on a slower cadence than GPS
+    // fixes -- OTP itself only polls the feed every 30 s, so asking faster buys
+    // nothing and costs battery and quota.
+    private static final long VEHICLE_REFRESH_MS = 30_000L;
+    private java.util.List<ApiModels.Vehicle> vehicles = null;
+    private String vehiclePattern = null;
+    private long vehiclesFetchedAt = 0;
+    // One stray fix should never accuse someone of being on the wrong bus.
+    private int offVehicleStreak = 0;
+    private static final int OFF_VEHICLE_STRIKES = 3;
+
     private final LocationListener listener = new LocationListener() {
         @Override public void onLocationChanged(@NonNull Location loc) { onFix(loc); }
         @Override public void onStatusChanged(String p, int s, Bundle e) { }
@@ -129,6 +140,8 @@ public class TransitRideService extends Service {
                 itinerary, loc.getLatitude(), loc.getLongitude(), furthestLeg);
         if (st.legIndex > furthestLeg) furthestLeg = st.legIndex;
 
+        checkVehicle(st, loc);
+
         boolean urgent = st.alert != null && !announced.contains(st.alertKey);
         if (urgent) {
             announced.add(st.alertKey);
@@ -140,6 +153,60 @@ public class TransitRideService extends Service {
             speak("You have arrived. Enjoy your trip.");
             update("Arrived", "Get off at " + st.alightStop.name, true);
             stopSelf();
+        }
+    }
+
+    /**
+     * Compare the rider against the live positions of the route they think they
+     * are on, and say something if they are nowhere near any of them.
+     *
+     * Deliberately conservative. Absent vehicle data is not evidence of anything,
+     * and one bad GPS fix is not either -- it takes three consecutive readings
+     * beyond the threshold before this speaks. The cost of a false alarm here is
+     * that the rider stops trusting the app entirely.
+     */
+    private void checkVehicle(TransitProgress.State st, Location loc) {
+        if (st.leg == null || !st.onBoard || st.leg.patternCode == null) {
+            offVehicleStreak = 0;
+            return;
+        }
+        long now = System.currentTimeMillis();
+        boolean stale = now - vehiclesFetchedAt > VEHICLE_REFRESH_MS;
+        if (!st.leg.patternCode.equals(vehiclePattern) || stale) {
+            vehiclePattern = st.leg.patternCode;
+            vehiclesFetchedAt = now;
+            ApiClient.get().transitVehicles(st.leg.patternCode).enqueue(
+                    new retrofit2.Callback<ApiModels.VehiclesResponse>() {
+                        @Override public void onResponse(
+                                retrofit2.Call<ApiModels.VehiclesResponse> c,
+                                retrofit2.Response<ApiModels.VehiclesResponse> r) {
+                            if (r.isSuccessful() && r.body() != null) {
+                                vehicles = r.body().vehicles;
+                            }
+                        }
+                        @Override public void onFailure(
+                                retrofit2.Call<ApiModels.VehiclesResponse> c, Throwable t) {
+                            // Losing the feed must not produce a warning: it is
+                            // missing evidence, not evidence of a missed bus.
+                            vehicles = null;
+                        }
+                    });
+            return;                       // judge on the next fix, once it lands
+        }
+
+        if (TransitProgress.looksLikeWrongVehicle(vehicles, loc.getLatitude(),
+                                                  loc.getLongitude())) {
+            offVehicleStreak++;
+        } else {
+            offVehicleStreak = 0;
+        }
+
+        if (offVehicleStreak == OFF_VEHICLE_STRIKES) {
+            String route = st.leg.route == null ? "this route" : st.leg.route;
+            speak("You may not be on the " + route + ". Check the vehicle.");
+            update("Are you on the right vehicle?",
+                    "No " + route + " is reporting near you. If you boarded a "
+                    + "different bus, replan from where you are.", true);
         }
     }
 

@@ -68,4 +68,9 @@ public interface ApiService {
                                             // ARRIVE, and the plan is walked backwards
                                             @Query("arrive_by") boolean arriveBy,
                                             @Query("wheelchair") boolean wheelchair);
+
+    // Where the vehicles on one pattern are right now. Used during a ride to
+    // answer what the stop countdown cannot: are you on the right vehicle?
+    @GET("transit/vehicles")
+    Call<ApiModels.VehiclesResponse> transitVehicles(@Query("pattern") String pattern);
 }

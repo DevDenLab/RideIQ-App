@@ -1,0 +1,91 @@
+Draw a data pipeline diagram, left to right, flat modern style, 16:9, like a conveyor belt of transformations. Start with two hexagon source shapes stacked vertically: 'Edmonton ETS GTFS - gtfs.zip, 22 MB, 7 agencies' and 'Geofabrik Alberta OSM - 350 MB'. The OSM one flows into a funnel-shaped box labelled 'clip_osm.py - cut to the bounding box of the feed's own stops' with a small map inset showing a large province shape and a small highlighted rectangle around Edmonton, and an output label '38 MB'. Both streams then converge into a big box 'OpenTripPlanner graph builder (Java 25, -Xmx6G)' with a stopwatch icon reading '37 seconds'. Output: a cylinder 'graph.obj - 96 MB, 291k vertices, 845k edges, 6,573 stops, 623 patterns'. That cylinder flows into 'gzip and publish as the rolling GitHub release transit-graph', then via a dashed arrow labelled 'scp' into a server icon 'EC2 /opt/rideiq/otp', then into an orange box 'rideiq-otp loads it (~60 s)'. Finally, three small feed icons on the far right labelled 'TripUpdates 45s', 'VehiclePositions 30s', 'Alerts 2min' point back into the orange OTP box with dashed arrows labelled 'GTFS-realtime, polled live'. Add a small warning badge near the GTFS source reading 'feed_end_date - past it OTP returns NOTHING, not stale times'.
+
+Aspect ratio: 16:9. Style: flat, modern, professional, whiteboard-clean, generous whitespace
+
+Follow this structure EXACTLY. Every node label, arrow label and grouping below must appear in the image, spelled as written. Do not invent extra components and do not omit any:
+
+{
+  "stages": [
+    {
+      "n": 1,
+      "id": "fetch",
+      "label": "Fetch",
+      "tool": "transit/otp.py fetch",
+      "inputs": [
+        "gtfs.edmonton.ca/TMGTFSRealTimeWebService/GTFS/gtfs.zip (22 MB)",
+        "download.geofabrik.de Alberta extract (350 MB)",
+        "OpenTripPlanner 2.9.0 shaded jar (183 MB)"
+      ],
+      "note": "otp.py also downloads a private Temurin JDK if the system Java is older than 25 - OTP 2.9 will not start on 24"
+    },
+    {
+      "n": 2,
+      "id": "clip",
+      "label": "Clip",
+      "tool": "transit/clip_osm.py",
+      "transform": "cut the provincial extract down to a bounding box derived from the feed's own stop extent, plus a 0.05 deg margin",
+      "output": "edmonton.osm.pbf (38 MB, 685k ways)",
+      "why": "handing OTP all of Alberta inflates build time and RAM for streets nobody in this app will ever walk on"
+    },
+    {
+      "n": 3,
+      "id": "build",
+      "label": "Build the graph",
+      "tool": "OpenTripPlanner graph builder",
+      "runtime": "37 seconds, -Xmx6G",
+      "output": "graph.obj - 96 MB, 291k vertices, 845k edges, 6,573 stops, 623 patterns",
+      "flags": "FaresV2 enabled in otp-config.json - this is a BUILD-time flag, the fare rules are baked into graph.obj"
+    },
+    {
+      "n": 4,
+      "id": "publish",
+      "label": "Publish",
+      "tool": "build-transit-graph workflow",
+      "output": "gzipped onto the rolling GitHub release tagged 'transit-graph', with a graph-info.json recording the feed version and validity dates",
+      "guard": "the workflow FAILS if the freshly built feed expires within 14 days"
+    },
+    {
+      "n": 5,
+      "id": "ship",
+      "label": "Ship",
+      "tool": "deploy-transit workflow",
+      "transform": "download the asset in the runner, scp it to EC2, unpack beside the live graph then swap atomically",
+      "why": "the host needs no GitHub credentials, and this keeps working if the repo ever goes private"
+    },
+    {
+      "n": 6,
+      "id": "load",
+      "label": "Load and serve",
+      "tool": "rideiq-otp container",
+      "runtime": "about 60 seconds to load the graph into memory",
+      "note": "this is the ~1 minute window where /transit returns 503"
+    }
+  ],
+  "realtime_feeds": [
+    {
+      "feed": "TripUpdates",
+      "poll": "45 s",
+      "gives": "delays - every leg's clock time is delay-adjusted",
+      "applied": "about 61%"
+    },
+    {
+      "feed": "VehiclePositions",
+      "poll": "30 s",
+      "gives": "where the buses actually are",
+      "applied": "about 98%"
+    },
+    {
+      "feed": "Alerts",
+      "poll": "2 min",
+      "gives": "detours, closures, elevator outages",
+      "applied": "n/a"
+    }
+  ],
+  "annotations": [
+    "The clip bounding box is derived from the feed, not hard-coded - if ETS adds a park-and-ride in Devon the box grows with it.",
+    "Trip updates only apply at about 61 percent. That is a feed property, not a misconfiguration: ETS identifies the rest with GTFS-realtime's newer modified_trip extension, which OTP 2.9 does not read for stop-time updates. In practice buses carry realtime and the LRT lines mostly do not.",
+    "Past feed_end_date OTP returns no itineraries at all rather than wrong ones - which is why the rebuild runs on a schedule and fails loudly when the feed is close to expiring."
+  ]
+}
+
+Requirements: all text horizontal and legible; no overlapping labels; no spelling changes to any label; leave whitespace rather than crowding.

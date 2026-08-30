@@ -1,0 +1,67 @@
+Create an educational comparison poster, flat modern style, 16:9, split into a LEFT half and a RIGHT half by a vertical divider. LEFT HALF titled 'Driving - time-INDEPENDENT': a small road graph with a path from A to B and edge labels showing distances in km, plus a caption 'the road is 2.1 km long at 6am and at 6pm - the answer does not depend on when you ask'. Add a small clock icon crossed out. RIGHT HALF titled 'Transit - time-DEPENDENT': draw a TIMETABLE-style diagram instead of a road graph - a horizontal time axis running 17:40 to 18:20, with three horizontal lanes labelled 'walk', 'Bus 8', 'walk'. Show a walking bar from 17:42 to 17:46, then a WAITING gap shaded grey from 17:46 to 17:48 labelled 'you must be there BEFORE the bus leaves', then a solid orange ride bar from 17:48 to 18:05, then a final walking bar 18:05 to 18:09. Add a prominent clock icon and the caption 'miss the 17:48 and the entire rest of the plan changes'. ACROSS THE BOTTOM, a full-width strip titled 'RAPTOR - rounds are transfers' with four numbered circles left to right: 'Round 0: everywhere you can WALK to', 'Round 1: everywhere reachable after ONE boarding', 'Round 2: after one transfer', 'Round 3: after two transfers', each with a small widening map blob beneath it showing the reachable area growing. Caption the strip: 'each round adds one more vehicle, so the first time a stop is reached is also the fewest-transfers way to reach it'.
+
+Aspect ratio: 16:9. Style: educational diagram, flat modern, generous whitespace, teaching-poster clarity
+
+Follow this structure EXACTLY. Every node label, arrow label and grouping below must appear in the image, spelled as written. Do not invent extra components and do not omit any:
+
+{
+  "the_core_insight": "A* searches a graph whose edge weights never change. Transit edges only exist at specific moments - you cannot 'traverse' the 17:48 bus at 17:52. That makes it a time-dependent shortest-path problem, which is a different class of algorithm.",
+  "comparison": [
+    {
+      "aspect": "What an edge means",
+      "driving": "a road segment, always available",
+      "transit": "a specific vehicle departing at a specific minute"
+    },
+    {
+      "aspect": "Does the answer depend on when you ask?",
+      "driving": "no",
+      "transit": "yes - completely"
+    },
+    {
+      "aspect": "What you optimise",
+      "driving": "distance",
+      "transit": "arrival time AND number of transfers, together"
+    },
+    {
+      "aspect": "Waiting",
+      "driving": "does not exist",
+      "transit": "a first-class cost - standing at a stop is part of the trip"
+    },
+    {
+      "aspect": "Algorithm",
+      "driving": "A* with a haversine heuristic",
+      "transit": "RAPTOR - Round-bAsed Public Transit Optimized Router"
+    }
+  ],
+  "raptor": {
+    "full_name": "Round-bAsed Public Transit Optimized Router",
+    "key_idea": "Work in rounds, where round k = the best you can do using at most k vehicles. No priority queue and no heuristic - just repeated sweeps over the routes touching the stops you have already reached.",
+    "rounds": [
+      {
+        "k": 0,
+        "means": "every stop you can reach on foot from the origin"
+      },
+      {
+        "k": 1,
+        "means": "everywhere reachable after boarding exactly one vehicle"
+      },
+      {
+        "k": 2,
+        "means": "everywhere reachable with one transfer"
+      },
+      {
+        "k": 3,
+        "means": "everywhere reachable with two transfers"
+      }
+    ],
+    "why_it_is_fast": "Each round is a linear scan over the routes that touch newly improved stops, with no heap operations at all. It is cache-friendly and needs no preprocessing, which is why it is the standard choice for schedule data that changes every few weeks.",
+    "bonus": "Because round k means 'at most k vehicles', RAPTOR naturally produces the whole Pareto set - fastest trip, fewest-transfers trip, and the useful compromises in between - in one pass."
+  },
+  "who_runs_it": "OpenTripPlanner 2.9, not our own code. Hand-rolling RAPTOR plus the walk-to-stop stitching, calendar exceptions, and realtime updates is a project in itself; OTP already does it correctly.",
+  "annotations": [
+    "This is the single most important idea in the transit work. Everything else - the container, the graph build, the GraphQL proxy - exists because of it.",
+    "Other algorithms in this family: Connection Scan (CSA), which sweeps timetable connections in departure order, and time-dependent Dijkstra, which is the simplest and the slowest."
+  ]
+}
+
+Requirements: all text horizontal and legible; no overlapping labels; no spelling changes to any label; leave whitespace rather than crowding.

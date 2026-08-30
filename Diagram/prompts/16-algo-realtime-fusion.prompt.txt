@@ -1,0 +1,54 @@
+Create an educational data-fusion diagram, flat modern style, 16:9. On the LEFT, a static document icon labelled 'Static GTFS - the plan' with a small timetable showing 'Bus 523 departs 17:48'. On the RIGHT, three pulsing feed icons stacked and labelled 'TripUpdates every 45 s', 'VehiclePositions every 30 s', 'Alerts every 2 min'. Both sides flow into a central orange merge box labelled 'OpenTripPlanner updaters'. Out of the merge box, one arrow to a phone card mock-up showing a transit itinerary with the text '17:51 - Live, 3 min late' and a small red dot. BELOW the main flow, add a wide horizontal honesty panel split in two: the LEFT side shows a phone card with a green 'Live, on time' badge captioned 'a feed actually said so'; the RIGHT side shows an identical card with NO badge at all captioned 'no live data - show nothing, never guess on time'. Put a large tick on the left and a large cross over a greyed-out fake badge on the right. Also add a small coverage bar chart: 'vehicle positions 98% applied' and 'trip updates 61% applied'.
+
+Aspect ratio: 16:9. Style: educational diagram, flat modern, generous whitespace, teaching-poster clarity
+
+Follow this structure EXACTLY. Every node label, arrow label and grouping below must appear in the image, spelled as written. Do not invent extra components and do not omit any:
+
+{
+  "two_questions": [
+    {
+      "question": "What is the plan?",
+      "answered_by": "static GTFS - the published timetable baked into graph.obj"
+    },
+    {
+      "question": "Is it actually running on time?",
+      "answered_by": "GTFS-realtime feeds, polled continuously by OTP"
+    }
+  ],
+  "feeds": [
+    {
+      "name": "TripUpdates",
+      "poll": "45 s",
+      "effect": "shifts every affected leg's clock time; this is what makes departures live",
+      "applied": "~61%"
+    },
+    {
+      "name": "VehiclePositions",
+      "poll": "30 s",
+      "effect": "where vehicles actually are right now",
+      "applied": "~98%"
+    },
+    {
+      "name": "Alerts",
+      "poll": "2 min",
+      "effect": "detours, closures, elevator outages, surfaced per itinerary",
+      "applied": "n/a"
+    }
+  ],
+  "config_traps": [
+    "feedId must match the id the graph was built with (ETS publishes '1'). Get it wrong and OTP polls happily and applies nothing - which looks exactly like working.",
+    "routingDefaults.walkSpeed was silently ignored in OTP 2.9 - the correct key is routingDefaults.walk.speed. It logged a warning and used the default."
+  ],
+  "coverage_honesty": {
+    "measured": "About 61% of trip updates apply. The remainder is not a misconfiguration and fuzzyTripMatching does not rescue it: ETS identifies those trips using GTFS-realtime's newer modified_trip extension instead of a plain trip_id, and OTP 2.9 does not read it for stop-time updates.",
+    "practical_effect": "Buses generally carry live data; the LRT lines generally do not. Those trips fall back to scheduled times - correct, just not live.",
+    "product_rule": "The app shows a 'Live - N min late' badge ONLY when a feed actually said so. An itinerary with no live data shows no badge at all, rather than 'on time', which would be a guess presented as a fact."
+  },
+  "degradation": "If OTP runs somewhere with no outbound internet, the updaters log fetch errors and the engine keeps serving the timetable. Realtime degrades; routing does not break.",
+  "annotations": [
+    "Under a minute either way is reported as 'on time' - a 20 second delay is noise, not information.",
+    "Because leg times are already delay-adjusted by OTP, the delay value is extra context rather than something the client must apply itself."
+  ]
+}
+
+Requirements: all text horizontal and legible; no overlapping labels; no spelling changes to any label; leave whitespace rather than crowding.

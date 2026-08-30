@@ -1,0 +1,122 @@
+Create a clean capability map diagram, flat modern style, 16:9. Three vertical columns joined by arrows. LEFT COLUMN headed 'Learning family' with four grouped labels: 'Supervised - regression', 'Supervised - classification', 'Unsupervised', 'Probabilistic / sequence'. MIDDLE COLUMN headed 'Algorithm' listing sixteen small rounded pills: Linear Regression, Random Forest, Neural Network, KNN, Logistic Regression, Decision Tree, AdaBoost, SVM, Naive Bayes, K-Means, Gaussian Mixture (EM), Hierarchical Clustering, PCA, Fisher Discriminant (LDA), Hidden Markov Model, Bayesian Network. RIGHT COLUMN headed 'Product feature' with eight boxes: 'ETA prediction', 'Fare estimation', 'Cancellation risk', 'Fraud check', 'Surge zones', 'Rider segments', 'Driver shift', 'Cancellation causes'. Draw arrows from each algorithm pill to the feature it serves, letting several arrows converge on the same feature to show ensembling. Use a distinct purple tint for the whole middle column. Keep every label horizontal and legible - this diagram is mostly text, so prioritise typography and spacing over decoration.
+
+Aspect ratio: 16:9. Style: educational diagram, flat modern, generous whitespace, teaching-poster clarity
+
+Follow this structure EXACTLY. Every node label, arrow label and grouping below must appear in the image, spelled as written. Do not invent extra components and do not omit any:
+
+{
+  "features": [
+    {
+      "feature": "ETA prediction",
+      "endpoint": "POST /predict-eta",
+      "algorithms": [
+        "Linear Regression",
+        "Random Forest",
+        "Neural Network"
+      ],
+      "combination": "three regressors averaged into an ensemble minute figure",
+      "inputs": [
+        "distance",
+        "hour",
+        "weather",
+        "traffic"
+      ]
+    },
+    {
+      "feature": "Fare estimation",
+      "endpoint": "POST /estimate-fare",
+      "algorithms": [
+        "Random Forest",
+        "KNN"
+      ],
+      "combination": "Random Forest is the headline price; KNN is the sanity check",
+      "inputs": [
+        "distance",
+        "duration (from the ETA model)",
+        "surge"
+      ]
+    },
+    {
+      "feature": "Cancellation risk",
+      "endpoint": "POST /cancellation-risk",
+      "algorithms": [
+        "Logistic Regression",
+        "Decision Tree",
+        "AdaBoost"
+      ],
+      "inputs": [
+        "wait_time",
+        "surge",
+        "traffic",
+        "rider_rating"
+      ]
+    },
+    {
+      "feature": "Fraud check",
+      "endpoint": "POST /fraud-check",
+      "algorithms": [
+        "SVM",
+        "Naive Bayes"
+      ],
+      "inputs": [
+        "payment",
+        "distance",
+        "duration",
+        "surge"
+      ]
+    },
+    {
+      "feature": "Surge zones",
+      "endpoint": "GET /surge-zones",
+      "algorithms": [
+        "K-Means",
+        "Gaussian Mixture (EM)",
+        "Hierarchical Clustering"
+      ],
+      "purpose": "group demand hotspots geographically"
+    },
+    {
+      "feature": "Rider segments",
+      "endpoint": "GET /rider-segments",
+      "algorithms": [
+        "PCA",
+        "Fisher Discriminant (LDA)"
+      ],
+      "purpose": "reduce rider behaviour to a plottable 2-D space and separate the classes"
+    },
+    {
+      "feature": "Driver shift",
+      "endpoint": "GET /driver-shift",
+      "algorithms": [
+        "Hidden Markov Model"
+      ],
+      "purpose": "infer the hidden state sequence idle / en-route / on-trip from observations"
+    },
+    {
+      "feature": "Cancellation causes",
+      "endpoint": "GET /cancellation-causes",
+      "algorithms": [
+        "Bayesian Network"
+      ],
+      "purpose": "reason about which factors cause cancellations, not merely which correlate"
+    }
+  ],
+  "plus_non_ml": [
+    {
+      "name": "A* search",
+      "role": "shortest path for drive and walk routing - graph search, not learning"
+    },
+    {
+      "name": "RAPTOR (inside OpenTripPlanner)",
+      "role": "time-dependent transit routing"
+    }
+  ],
+  "orchestration": "POST /quote is the one call that chains three of these together: ETA -> fare (which needs the ETA) -> cancellation risk, returning all of it plus an estimated wait in a single response.",
+  "annotations": [
+    "Accuracy note: app.py and the README both say '15 ML algorithms', but the PIPELINE map in models.py lists 16 distinct names (Random Forest appears in two features). The 16 above is what the code actually registers.",
+    "Every model trains on synthetic data at container boot, which takes about 20 seconds - that is why the deploy health check allows a 60 second budget.",
+    "Per-feature detail already exists in Diagram/algorithms/*.json; this map is the index over them."
+  ]
+}
+
+Requirements: all text horizontal and legible; no overlapping labels; no spelling changes to any label; leave whitespace rather than crowding.

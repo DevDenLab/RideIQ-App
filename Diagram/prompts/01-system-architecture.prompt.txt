@@ -1,0 +1,282 @@
+Create a clean, professional software architecture diagram, left-to-right flow, flat modern style, 16:9. Far left: a phone frame labelled 'RideIQ Android app'. An arrow crosses the public internet into a large dashed rounded boundary labelled 'AWS EC2 - Ubuntu, 8 GB RAM, single host'. Inside that boundary, top to bottom: an nginx box on port 80; below it two identical FastAPI boxes side by side labelled 'rideiq-blue' and 'rideiq-green' - draw blue with a solid green outline marked ACTIVE and green greyed out marked IDLE; both connect down to a red Redis cylinder and a light blue SQLite cylinder. Below those, a distinctly ORANGE box labelled 'rideiq-otp - OpenTripPlanner 2.9' with a cylinder beside it labelled 'graph.obj 96 MB'. Only the FastAPI boxes connect to the OTP box; nginx must NOT connect to it - put a small padlock on that link with the words 'private network appnet, no published port'. Far right, outside the host boundary, four hexagons for free external data: 'OpenStreetMap', 'Edmonton ETS GTFS', 'Nominatim geocoding', 'CARTO and Esri map tiles'. Use solid dark arrows for live request traffic and dashed orange arrows for data refresh. Label every arrow. Keep all text horizontal and legible.
+
+Aspect ratio: 16:9. Style: flat, modern, professional, whiteboard-clean, generous whitespace
+
+Follow this structure EXACTLY. Every node label, arrow label and grouping below must appear in the image, spelled as written. Do not invent extra components and do not omit any:
+
+{
+  "zones": [
+    {
+      "id": "client",
+      "label": "Client",
+      "color": "#6366F1"
+    },
+    {
+      "id": "host",
+      "label": "AWS EC2 - Ubuntu, 8 GB RAM, Docker (single host)",
+      "color": "#94A3B8",
+      "boundary": "dashed"
+    },
+    {
+      "id": "registry",
+      "label": "GitHub Container Registry (ghcr.io)",
+      "color": "#F59E0B"
+    },
+    {
+      "id": "external",
+      "label": "External free data sources (no API keys)",
+      "color": "#64748B"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "phone",
+      "zone": "client",
+      "type": "device",
+      "label": "RideIQ Android app",
+      "sublabel": "osmdroid map, Retrofit + Gson, three travel modes: Drive / Walk / Transit",
+      "detail": [
+        "RouteMapActivity - map, mode pills, route and itinerary cards",
+        "DirectionsActivity - turn list, or the transit leg-by-leg plan",
+        "MainActivity - ML insights screens",
+        "ProfileActivity"
+      ]
+    },
+    {
+      "id": "nginx",
+      "zone": "host",
+      "type": "proxy",
+      "label": "nginx (container: cicd-edge)",
+      "sublabel": "listens on :80 - the only published port on the box",
+      "detail": [
+        "upstream points at whichever colour is live",
+        "config rewritten and reloaded on every deploy"
+      ]
+    },
+    {
+      "id": "blue",
+      "zone": "host",
+      "type": "service",
+      "state": "ACTIVE",
+      "label": "rideiq-blue - FastAPI :8000",
+      "sublabel": "uvicorn; trains 16 ML models on boot (~20 s)"
+    },
+    {
+      "id": "green",
+      "zone": "host",
+      "type": "service",
+      "state": "IDLE",
+      "label": "rideiq-green - FastAPI :8000",
+      "sublabel": "previous release, kept warm for instant rollback"
+    },
+    {
+      "id": "models",
+      "zone": "host",
+      "type": "component",
+      "color": "#8B5CF6",
+      "label": "models.py - the ML brain",
+      "sublabel": "16 algorithms behind 8 product features"
+    },
+    {
+      "id": "routing",
+      "zone": "host",
+      "type": "component",
+      "label": "routing.py - A* engine",
+      "sublabel": "city_graph.json (drive, 8.7 MB) + walk_graph.json (37 MB)"
+    },
+    {
+      "id": "transit_client",
+      "zone": "host",
+      "type": "component",
+      "label": "transit_client.py",
+      "sublabel": "translates OTP GraphQL into the RideIQ leg format"
+    },
+    {
+      "id": "redis",
+      "zone": "host",
+      "type": "cache",
+      "label": "rideiq-redis",
+      "sublabel": "Redis 7 - analytics cached 1 h, transit plans only 120 s"
+    },
+    {
+      "id": "sqlite",
+      "zone": "host",
+      "type": "database",
+      "label": "SQLite rideiq.db",
+      "sublabel": "docker volume rideiq_data:/data - every quote logged"
+    },
+    {
+      "id": "otp",
+      "zone": "host",
+      "type": "service",
+      "color": "#E65100",
+      "label": "rideiq-otp - OpenTripPlanner 2.9.0",
+      "sublabel": "Java 25 JVM, -Xmx3G, GraphQL at /otp/gtfs/v1 on :8080",
+      "detail": [
+        "RAPTOR search over the ETS timetable",
+        "three GTFS-realtime updaters polling live",
+        "not reachable from the internet"
+      ]
+    },
+    {
+      "id": "graph",
+      "zone": "host",
+      "type": "datastore",
+      "label": "graph.obj (96 MB)",
+      "sublabel": "/opt/rideiq/otp - 291k vertices, 845k edges, 6,573 stops, 623 patterns"
+    },
+    {
+      "id": "ghcr_app",
+      "zone": "registry",
+      "type": "artifact",
+      "label": "rideiq-app:sha-<commit>"
+    },
+    {
+      "id": "ghcr_otp",
+      "zone": "registry",
+      "type": "artifact",
+      "label": "rideiq-app-otp:latest"
+    },
+    {
+      "id": "osm",
+      "zone": "external",
+      "type": "source",
+      "label": "OpenStreetMap",
+      "sublabel": "Geofabrik Alberta extract (ODbL)"
+    },
+    {
+      "id": "gtfs",
+      "zone": "external",
+      "type": "source",
+      "label": "Edmonton ETS GTFS",
+      "sublabel": "7 agencies, ~6,800 stops, plus 3 realtime feeds"
+    },
+    {
+      "id": "nominatim",
+      "zone": "external",
+      "type": "source",
+      "label": "Nominatim",
+      "sublabel": "geocode / reverse-geocode / autocomplete"
+    },
+    {
+      "id": "tiles",
+      "zone": "external",
+      "type": "source",
+      "label": "CARTO + Esri tiles",
+      "sublabel": "basemap fetched directly by the phone"
+    }
+  ],
+  "connections": [
+    {
+      "from": "phone",
+      "to": "nginx",
+      "label": "HTTP :80 (plaintext - see annotations)",
+      "kind": "traffic"
+    },
+    {
+      "from": "phone",
+      "to": "tiles",
+      "label": "map tiles fetched directly by osmdroid",
+      "kind": "traffic"
+    },
+    {
+      "from": "nginx",
+      "to": "blue",
+      "label": "proxy_pass to the ACTIVE colour",
+      "kind": "traffic"
+    },
+    {
+      "from": "nginx",
+      "to": "green",
+      "label": "idle - receives no traffic",
+      "kind": "idle"
+    },
+    {
+      "from": "blue",
+      "to": "models",
+      "label": "/quote /predict-eta /surge-zones ...",
+      "kind": "internal"
+    },
+    {
+      "from": "blue",
+      "to": "routing",
+      "label": "/route-latlon (A*)",
+      "kind": "internal"
+    },
+    {
+      "from": "blue",
+      "to": "transit_client",
+      "label": "/transit",
+      "kind": "internal"
+    },
+    {
+      "from": "transit_client",
+      "to": "otp",
+      "label": "POST /otp/gtfs/v1 GraphQL - private network only",
+      "kind": "traffic"
+    },
+    {
+      "from": "otp",
+      "to": "graph",
+      "label": "loaded into memory at boot (~60 s)",
+      "kind": "internal"
+    },
+    {
+      "from": "otp",
+      "to": "gtfs",
+      "label": "GTFS-realtime: trips 45 s, vehicles 30 s, alerts 2 min",
+      "kind": "refresh"
+    },
+    {
+      "from": "blue",
+      "to": "redis",
+      "label": "cache get / set",
+      "kind": "internal"
+    },
+    {
+      "from": "blue",
+      "to": "sqlite",
+      "label": "INSERT quote log",
+      "kind": "internal"
+    },
+    {
+      "from": "blue",
+      "to": "nominatim",
+      "label": "geocode / search (results cached in Redis)",
+      "kind": "traffic"
+    },
+    {
+      "from": "ghcr_app",
+      "to": "blue",
+      "label": "docker pull on deploy",
+      "kind": "deploy"
+    },
+    {
+      "from": "ghcr_otp",
+      "to": "otp",
+      "label": "docker pull on transit deploy",
+      "kind": "deploy"
+    },
+    {
+      "from": "osm",
+      "to": "graph",
+      "label": "street network feeds the graph build",
+      "kind": "refresh"
+    },
+    {
+      "from": "gtfs",
+      "to": "graph",
+      "label": "timetable feeds the graph build",
+      "kind": "refresh"
+    }
+  ],
+  "annotations": [
+    "Exactly ONE colour serves traffic at a time; the other stays warm as a rollback target.",
+    "OTP publishes no port and nginx never proxies to it - only FastAPI can reach the transit engine.",
+    "If OTP is down, /transit returns 503 and the app falls back to a Google Maps handoff. Drive and walk routing never touch OTP.",
+    "Every external data source is free and keyless: OpenStreetMap, City of Edmonton open data, Nominatim.",
+    "Known weakness, worth drawing honestly: the phone-to-nginx hop is plaintext HTTP and carries live GPS coordinates."
+  ]
+}
+
+Requirements: all text horizontal and legible; no overlapping labels; no spelling changes to any label; leave whitespace rather than crowding.

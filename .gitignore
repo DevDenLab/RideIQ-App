@@ -32,3 +32,6 @@ rideiq-backend/transit/data/
 # Local runtime state
 rideiq-backend/rideiq.db
 rideiq-backend/cache/
+
+# Generated images land here (see AGENT-PROMPT.md). Keep the specs, not the output.
+Diagram/generated/

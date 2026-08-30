@@ -1,0 +1,17 @@
+file	title	aspect_ratio	bytes
+01-system-architecture.prompt.txt	System Architecture	16:9	9080
+02-deployment-topology.prompt.txt	Deployment Topology - inside the EC2 host	4:3	4341
+03-cicd-pipeline.prompt.txt	Self-Driving CI/CD Pipeline	16:9	5949
+04-transit-data-pipeline.prompt.txt	Transit Data Pipeline - open data to live engine	16:9	5118
+05-seq-ride-quote.prompt.txt	Sequence - POST /quote	4:3	3613
+06-seq-drive-route.prompt.txt	Sequence - POST /route-latlon (drive or walk)	4:3	4108
+07-seq-transit-plan.prompt.txt	Sequence - GET /transit	16:9	5327
+08-seq-turn-by-turn-nav.prompt.txt	Sequence - turn-by-turn navigation loop	4:3	4050
+09-seq-bluegreen-deploy.prompt.txt	Sequence - blue-green deploy on EC2	16:9	4294
+10-algo-astar.prompt.txt	A* Search - how drive and walk routes are found	16:9	5300
+11-algo-alternative-routes.prompt.txt	Alternative Routes - penalised re-search	4:3	2998
+12-algo-raptor-vs-astar.prompt.txt	Why Transit Needs a Different Algorithm - A* vs RAPTOR	16:9	4755
+13-algo-ml-map.prompt.txt	The ML Brain - 16 algorithms behind 8 features	16:9	4949
+14-algo-fare-transfer.prompt.txt	Transit Fares - why the total is not the sum of the legs	4:3	3902
+15-algo-polyline-encoding.prompt.txt	Encoded Polylines - fitting a route into a string	4:3	3504
+16-algo-realtime-fusion.prompt.txt	GTFS-realtime - turning a timetable into live times	16:9	3857

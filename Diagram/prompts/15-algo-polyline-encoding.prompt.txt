@@ -1,0 +1,58 @@
+Create an educational diagram, flat modern style, explaining encoded polylines, as a vertical pipeline of four stages with big arrows between them. STAGE 1 'Raw coordinates': a short list showing 38.50000, -120.20000 then 40.70000, -120.95000 then 43.25200, -126.45300, with a red tag reading 'verbose'. STAGE 2 'Store only the difference': the same points shown as deltas with a caption 'consecutive points on a road are very close together, so the differences are small numbers'. STAGE 3 'Pack into ASCII': a row of 5-bit chunk blocks being assembled into printable characters. STAGE 4 'Result': the single string _p~iF~ps|U_ulLnnqC_mqNvxq`@ in a monospace box with a green tag reading 'one compact string'. Down the right-hand side, a small map showing the three decoded points joined into a route line, with an arrow from the string to the map labelled 'decoded on the phone and drawn with osmdroid'. Keep all text horizontal and monospace where it is code.
+
+Aspect ratio: 4:3. Style: educational diagram, flat modern, generous whitespace, teaching-poster clarity
+
+Follow this structure EXACTLY. Every node label, arrow label and grouping below must appear in the image, spelled as written. Do not invent extra components and do not omit any:
+
+{
+  "problem": "A single transit leg's geometry can be a hundred coordinate pairs. Sent as raw JSON numbers that is kilobytes per leg, several times over per itinerary.",
+  "idea": "Encode the DELTA between consecutive points rather than absolute values, then pack those small integers into printable ASCII characters, 5 bits at a time.",
+  "why_deltas_are_small": "Consecutive vertices along a road are metres apart, so at 5 decimal places the differences are small integers - and small integers need few bits.",
+  "decode_steps": [
+    {
+      "n": 1,
+      "label": "Read 5-bit chunks",
+      "detail": "subtract 63 from each character, take the low 5 bits, and keep going while the continuation bit (0x20) is set"
+    },
+    {
+      "n": 2,
+      "label": "Undo zig-zag",
+      "detail": "the low bit marks the sign, so odd values invert - this is how negatives survive an unsigned packing"
+    },
+    {
+      "n": 3,
+      "label": "Accumulate",
+      "detail": "add each delta onto a running latitude and longitude"
+    },
+    {
+      "n": 4,
+      "label": "Scale",
+      "detail": "divide by 100000 (precision 5) to get degrees"
+    }
+  ],
+  "verification": {
+    "input": "_p~iF~ps|U_ulLnnqC_mqNvxq`@",
+    "expected": [
+      [
+        38.5,
+        -120.2
+      ],
+      [
+        40.7,
+        -120.95
+      ],
+      [
+        43.252,
+        -126.453
+      ]
+    ],
+    "note": "this is Google's own published reference vector, and it is a unit test in the repo - a decoder that is subtly wrong draws a route that wanders into the wrong part of the city"
+  },
+  "where_used": "OpenTripPlanner returns every leg's geometry this way. transit_client decodes it server-side into [[lat, lon], ...] so the Android app receives the same polyline_latlon shape the driving routes already use, and needs no new drawing code.",
+  "annotations": [
+    "Same format Google Maps uses, so the technique is worth knowing independently of this project.",
+    "Precision 5 means roughly one metre of resolution - far finer than a drawn map line needs."
+  ]
+}
+
+Requirements: all text horizontal and legible; no overlapping labels; no spelling changes to any label; leave whitespace rather than crowding.

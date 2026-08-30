@@ -1,0 +1,49 @@
+Create an educational three-step comic-strip diagram, flat modern style, showing how alternative driving routes are found. PANEL 1 titled 'Run 1': a small street grid with a green path from A to B labelled 'best route, 4.1 km'. PANEL 2 titled 'Make it expensive': the SAME grid with every road segment of that first route drawn thick and orange with small 'x2.4' cost tags on them, captioned 'the roads we just used now cost 2.4 times more'. PANEL 3 titled 'Run 2': the same grid where A* now finds a visibly DIFFERENT blue path avoiding most of the orange roads, labelled 'alternative, 4.6 km'. Underneath all three panels, a caption strip: 'repeat until 3 distinct routes are found - the penalty makes the search prefer streets it has not used, instead of returning three nearly identical lines'. Keep it clean and obvious.
+
+Aspect ratio: 4:3. Style: educational diagram, flat modern, generous whitespace, teaching-poster clarity
+
+Follow this structure EXACTLY. Every node label, arrow label and grouping below must appear in the image, spelled as written. Do not invent extra components and do not omit any:
+
+{
+  "problem": "Plain A* returns THE shortest path. Ask it twice and you get the same answer twice - useless for offering a rider a choice.",
+  "trick": "Re-run A* with the edges of every route found so far multiplied by a penalty factor of 2.4. The search is not forbidden from reusing those roads, just discouraged, so it finds a genuinely different route when one exists and gracefully reuses roads when there is no alternative.",
+  "parameters": {
+    "penalty_factor": 2.4,
+    "target_routes": 3,
+    "max_attempts": "want x 3"
+  },
+  "steps": [
+    {
+      "n": 1,
+      "label": "Run A* with no penalties",
+      "detail": "this is the recommended route"
+    },
+    {
+      "n": 2,
+      "label": "Penalise",
+      "detail": "add every edge of that route, in both directions, to the penalised set"
+    },
+    {
+      "n": 3,
+      "label": "Run A* again",
+      "detail": "penalised edges now cost 2.4x their real length"
+    },
+    {
+      "n": 4,
+      "label": "Keep it if new",
+      "detail": "identical paths are discarded; distinct ones become alternatives"
+    },
+    {
+      "n": 5,
+      "label": "Repeat",
+      "detail": "until 3 distinct routes exist or the attempt budget runs out"
+    }
+  ],
+  "in_the_app": "The route cards show 'Recommended' for the first and '+N min' for each alternative, computed against the first route's ETA.",
+  "annotations": [
+    "Why 2.4 and not a hard ban: a hard ban can make the destination unreachable on a sparse graph, or force an absurd detour. A multiplier degrades gracefully.",
+    "The penalty is applied symmetrically to both directions of each edge, so the search cannot dodge it by traversing the same street backwards."
+  ]
+}
+
+Requirements: all text horizontal and legible; no overlapping labels; no spelling changes to any label; leave whitespace rather than crowding.

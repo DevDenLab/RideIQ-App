@@ -2,6 +2,23 @@ plugins {
     id 'com.android.application'
 }
 
+
+// Resolve the API key from, in order: -PrideiqApiKey=..., a gradle property, then
+// local.properties. That last one needs reading BY HAND: Gradle uses
+// local.properties for sdk.dir and does not expose its contents as project
+// properties, so project.findProperty("rideiqApiKey") is always null there. That
+// mistake compiled an empty key into the APK and every call came back 401.
+def rideiqApiKey = ""
+def localPropsFile = rootProject.file("local.properties")
+if (localPropsFile.exists()) {
+    def localProps = new Properties()
+    localPropsFile.withInputStream { localProps.load(it) }
+    rideiqApiKey = localProps.getProperty("rideiqApiKey", "")
+}
+if (project.hasProperty("rideiqApiKey")) {
+    rideiqApiKey = project.property("rideiqApiKey")
+}
+
 android {
     namespace 'com.example.rideiq'
     compileSdk 34
@@ -10,10 +27,9 @@ android {
         minSdk 24
         targetSdk 34
 
-        // Supplied at build time; empty locally and in CI, which is fine because
-        // the backend only enforces the key when API_KEY is set on the server.
-        buildConfigField "String", "RIDEIQ_API_KEY",
-                "\"" + (project.findProperty("rideiqApiKey") ?: "") + "\""
+        // Supplied at build time; empty in CI, which is fine because the backend
+        // only enforces the key when API_KEY is set on the server.
+        buildConfigField "String", "RIDEIQ_API_KEY", "\"${rideiqApiKey}\""
 
         versionCode 1
         versionName "1.0"

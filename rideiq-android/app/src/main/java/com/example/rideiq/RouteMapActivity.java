@@ -262,7 +262,20 @@ public class RouteMapActivity extends AppCompatActivity {
 
         setupMyLocation();
 
-        if (hasLocationPermission()) {
+        // The case that actually matters: the app was killed mid-journey and
+        // reopened -- often underground on the LRT, with no signal to replan.
+        // Bring the trip back rather than showing an empty map to someone who is
+        // currently on it. Gated on a 2 h window so tomorrow's launch is clean.
+        boolean restoredSaved = false;
+        if (PlanStore.isFreshEnoughToRestore(this)) {
+            travelMode = "transit";
+            updateModePills();
+            restoredSaved = showSavedPlan();
+        }
+
+        if (restoredSaved) {
+            // The saved plan is already on the map; do not overwrite the pickup.
+        } else if (hasLocationPermission()) {
             setPickupToMyLocation();
         } else {
             ActivityCompat.requestPermissions(this,
@@ -715,9 +728,53 @@ public class RouteMapActivity extends AppCompatActivity {
                                                     @NonNull Throwable t) {
                         progress.setVisibility(View.GONE);
                         revealPanels();
+                        if (showSavedPlan()) return;
                         info.setText("Can't reach server. Is the backend running and BASE_URL correct?");
                     }
                 });
+    }
+
+    /**
+     * Offer the last saved plan when the network is gone.
+     *
+     * Only ever a FALLBACK, never a silent substitute: the banner says plainly
+     * that this is a saved plan and when it was saved, because a timetable-bound
+     * plan presented as current is worse than no plan at all.
+     */
+    /** First named place in the plan -- the boarding stop, or where you set off. */
+    private String itineraryStart(ApiModels.Itinerary it) {
+        if (it.legs == null || it.legs.isEmpty()) return "";
+        for (ApiModels.TransitLeg l : it.legs) {
+            if (l.isRide() && l.fromName != null) return l.fromName;
+        }
+        return it.legs.get(0).fromName == null ? "" : it.legs.get(0).fromName;
+    }
+
+    /** Last named place -- the final alighting stop, or the destination. */
+    private String itineraryEnd(ApiModels.Itinerary it) {
+        if (it.legs == null || it.legs.isEmpty()) return "";
+        for (int i = it.legs.size() - 1; i >= 0; i--) {
+            ApiModels.TransitLeg l = it.legs.get(i);
+            if (l.isRide() && l.toName != null) return l.toName;
+        }
+        String last = it.legs.get(it.legs.size() - 1).toName;
+        return last == null ? "" : last;
+    }
+
+    private boolean showSavedPlan() {
+        ApiModels.Itinerary saved = PlanStore.load(this);
+        if (saved == null) return false;
+        List<ApiModels.Itinerary> one = new ArrayList<>();
+        one.add(saved);
+        transitOptions = one;
+        selectedItinerary = 0;
+        buildTransitCards();
+        optionsScroll.setVisibility(View.VISIBLE);
+        drawItinerary(saved);
+        info.setText("No connection - showing your saved plan.\n"
+                + PlanStore.describe(this)
+                + "\nTimes are from when it was saved, so check them before relying on them.");
+        return true;
     }
 
     private void showTransitOptions(List<ApiModels.Itinerary> its) {
@@ -852,6 +909,13 @@ public class RouteMapActivity extends AppCompatActivity {
 
     /** Draw each leg in its own colour: walk legs dashed grey, each ride solid. */
     private void drawItinerary(ApiModels.Itinerary it) {
+        // Keep it on disk so losing signal does not lose the trip -- which is
+        // exactly what happens on the LRT, underground, mid-journey.
+        // Label it from the ITINERARY, not from the on-screen pickup/drop-off text.
+        // Those fields still hold placeholder hints when a plan arrives before the
+        // reverse-geocode does, which produced a saved plan described as
+        // "waiting for your location... to tap the map to set it".
+        PlanStore.save(this, it, itineraryStart(it), itineraryEnd(it));
         clearRouteOverlays();
         if (it.legs == null) return;
 

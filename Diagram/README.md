@@ -4,6 +4,33 @@
 
 ## What's here
 
+**Start with [`00-index.json`](00-index.json)** — the manifest for the current set.
+
+### Current set (v2, generated 2026-08-25)
+
+Seventeen standalone files. Each carries its own `image_prompt` plus a `spec` you paste
+underneath as the exact structure to follow.
+
+| Group | Files |
+|---|---|
+| **Architecture** | `01-system-architecture` (hero), `02-deployment-topology`, `03-cicd-pipeline`, `04-transit-data-pipeline` |
+| **Sequence / flow** | `05-seq-ride-quote`, `06-seq-drive-route`, `07-seq-transit-plan`, `08-seq-turn-by-turn-nav`, `09-seq-bluegreen-deploy` |
+| **Algorithms** | `10-algo-astar`, `11-algo-alternative-routes`, `12-algo-raptor-vs-astar`, `13-algo-ml-map`, `14-algo-fare-transfer`, `15-algo-polyline-encoding`, `16-algo-realtime-fusion` |
+
+If you only make one, make `01`. If you only understand one, understand `12` — why transit
+needs a different algorithm than driving is the idea the whole transit engine rests on.
+
+Every number in the set was read from the running system or the source, not estimated.
+
+### Superseded
+
+- **`architecture.json`**, **`system-architecture.json`** — predate the transit engine and
+  the current CI/CD. Kept for history; use `01-system-architecture.json` instead.
+- **`algorithms/`** — per-feature ML JSONs, still accurate. `13-algo-ml-map.json` indexes them.
+
+## Older notes
+
+
 - **`architecture.json`** — the full system + deployment architecture, structured for **Gemini / Nano Banana Pro**.
   Use the `image_prompt` field as your main instruction, and the `spec` (zones, nodes, connections) as the exact
   structure to draw.

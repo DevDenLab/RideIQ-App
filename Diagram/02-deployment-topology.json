@@ -1,0 +1,149 @@
+{
+  "$comment": "Zoom-in on the single EC2 host: containers, networks, volumes, memory budget. Use when the hero diagram gets too crowded.",
+  "meta": {
+    "project": "RideIQ",
+    "title": "Deployment Topology - inside the EC2 host",
+    "version": "1.0",
+    "diagram_type": "container / infrastructure",
+    "orientation": "top-to-bottom",
+    "aspect_ratio": "4:3"
+  },
+  "image_prompt": "Draw a detailed container topology diagram, top to bottom, flat modern style. One large dashed rounded rectangle labelled 'AWS EC2 - Ubuntu, 8 GB RAM'. Inside it, a horizontal band labelled 'docker network: appnet (private bridge)'. Sitting on that band, five container boxes: 'cicd-edge (nginx)' at the top, with the ONLY arrow that crosses the host boundary out to the internet on port 80; below it two FastAPI containers 'rideiq-blue' and 'rideiq-green' side by side, blue outlined solid green and labelled ACTIVE, green greyed and labelled IDLE; then 'rideiq-redis'; then an orange 'rideiq-otp'. Draw a docker volume cylinder 'rideiq_data' attached to both FastAPI containers, and a host folder icon '/opt/rideiq/otp' attached to rideiq-otp. In one corner add a small stacked bar titled 'RAM budget of 8 GB' with segments labelled OTP 3.0, FastAPI x2 2.0, Redis 0.2, OS and Docker 1.0, headroom 1.8. Keep all text horizontal.",
+  "style": {
+    "look": "flat, modern, professional, whiteboard-clean, generous whitespace",
+    "shapes": "rounded rectangles for services, cylinders for datastores, phone frame for client, dashed boundary for host/VM, hexagons for external data sources",
+    "palette": {
+      "client": "#6366F1",
+      "edge": "#0F172A",
+      "api": "#22C55E",
+      "idle": "#CBD5E1",
+      "cache": "#EF4444",
+      "database": "#0EA5E9",
+      "ml": "#8B5CF6",
+      "transit": "#E65100",
+      "cicd": "#F59E0B",
+      "external": "#64748B",
+      "host_boundary": "#94A3B8",
+      "traffic_arrow": "#111827",
+      "deploy_arrow": "#F59E0B"
+    },
+    "typography": "sans-serif; node titles bold, sublabels lighter and smaller; keep all text horizontal",
+    "rules": [
+      "Never overlap arrows with node labels.",
+      "Solid arrows = live request traffic. Dashed arrows = build / deploy / data refresh.",
+      "Everything inside the dashed EC2 boundary lives on one physical host."
+    ]
+  },
+  "spec": {
+    "host": {
+      "provider": "AWS EC2",
+      "os": "Ubuntu",
+      "ram_gb": 8,
+      "runtime": "Docker",
+      "published_ports": [
+        80
+      ]
+    },
+    "networks": [
+      {
+        "name": "appnet",
+        "driver": "bridge",
+        "scope": "private to the host",
+        "note": "containers address each other by name; only nginx maps a host port"
+      }
+    ],
+    "volumes": [
+      {
+        "name": "rideiq_data",
+        "type": "docker volume",
+        "mounted_at": "/data",
+        "used_by": [
+          "rideiq-blue",
+          "rideiq-green"
+        ],
+        "holds": "rideiq.db (SQLite)"
+      },
+      {
+        "name": "/opt/rideiq/otp",
+        "type": "host bind mount",
+        "mounted_at": "/var/otp",
+        "used_by": [
+          "rideiq-otp"
+        ],
+        "holds": "graph.obj, graph-info.json, router-config.json"
+      }
+    ],
+    "containers": [
+      {
+        "name": "cicd-edge",
+        "image": "nginx:1.27-alpine",
+        "ports": "80:80",
+        "role": "public edge / load balancer",
+        "restart": "unless-stopped",
+        "note": "config rewritten and reloaded on each deploy to point at the new colour"
+      },
+      {
+        "name": "rideiq-blue",
+        "image": "ghcr.io/devdenlab/rideiq-app:sha-<commit>",
+        "ports": "none (private)",
+        "role": "FastAPI application",
+        "state": "ACTIVE",
+        "env": [
+          "REDIS_URL=redis://rideiq-redis:6379/0",
+          "DB_PATH=/data/rideiq.db",
+          "INSTANCE_ID=blue",
+          "OTP_URL=http://rideiq-otp:8080"
+        ]
+      },
+      {
+        "name": "rideiq-green",
+        "image": "ghcr.io/devdenlab/rideiq-app:sha-<previous>",
+        "ports": "none (private)",
+        "role": "FastAPI application",
+        "state": "IDLE - rollback target"
+      },
+      {
+        "name": "rideiq-redis",
+        "image": "redis:7-alpine",
+        "ports": "none (private)",
+        "role": "shared cache",
+        "note": "started once and never swapped by a deploy"
+      },
+      {
+        "name": "rideiq-otp",
+        "image": "ghcr.io/devdenlab/rideiq-app-otp:latest",
+        "ports": "none (private)",
+        "role": "transit routing engine",
+        "heap": "-Xmx3G",
+        "note": "eclipse-temurin:25-jre plus the OTP 2.9.0 shaded jar"
+      }
+    ],
+    "ram_budget_gb": [
+      {
+        "component": "rideiq-otp (JVM heap + in-memory graph)",
+        "gb": 3.0
+      },
+      {
+        "component": "rideiq-blue + rideiq-green (Python + ML models)",
+        "gb": 2.0
+      },
+      {
+        "component": "rideiq-redis",
+        "gb": 0.2
+      },
+      {
+        "component": "OS + Docker daemon",
+        "gb": 1.0
+      },
+      {
+        "component": "headroom",
+        "gb": 1.8
+      }
+    ],
+    "annotations": [
+      "During a deploy BOTH FastAPI colours run at once - that is the peak memory moment.",
+      "OTP is deliberately NOT blue-green: two JVMs each holding the graph will not fit in 8 GB.",
+      "A graph swap therefore costs about one minute of /transit returning 503. Nothing else is affected."
+    ]
+  }
+}

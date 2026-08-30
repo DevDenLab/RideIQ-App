@@ -1,0 +1,91 @@
+{
+  "$comment": "The subtlest correctness trap in the transit code, and the one with a wrong answer that looks completely plausible.",
+  "meta": {
+    "project": "RideIQ",
+    "title": "Transit Fares - why the total is not the sum of the legs",
+    "version": "1.0",
+    "diagram_type": "algorithm explainer / correctness trap",
+    "aspect_ratio": "4:3"
+  },
+  "image_prompt": "Create an educational two-column comparison poster, flat modern style, showing a fare calculation trap. Both columns show the SAME journey drawn as three horizontal coloured bars stacked vertically labelled 'Bus 523', 'Bus 006', 'Bus 055', each with a small tag reading 'use id: A'. LEFT COLUMN is headed in red 'WRONG - sum per leg' and shows $3.00 + $3.00 + $3.00 with a big red total '$9.00' and a red cross, captioned 'charges the rider three times for one transfer-protected journey'. RIGHT COLUMN is headed in green 'RIGHT - sum over DISTINCT use ids' and shows the three identical 'use id: A' tags collapsing with arrows into a single token, giving a green total '$3.00' with a tick, captioned 'one purchase covers all three legs inside the transfer window'. Underneath, a full-width strip showing three payment-method chips: 'Arc card $3.00', 'Contactless $3.00', 'Cash $3.75', with the cheapest highlighted, captioned 'the response returns the cheapest plus the alternatives'.",
+  "style": {
+    "look": "educational diagram, flat modern, generous whitespace, teaching-poster clarity",
+    "principles": [
+      "Show the mechanism, not just the name. A reader should finish understanding WHY it works.",
+      "Prefer one worked example with real numbers over an abstract restatement.",
+      "Use colour to encode state (frontier / visited / chosen), never for decoration.",
+      "Keep formulas large and readable; put them in their own panel, not inside a node."
+    ],
+    "palette": {
+      "frontier": "#F59E0B",
+      "visited": "#CBD5E1",
+      "chosen": "#22C55E",
+      "goal": "#EF4444",
+      "heuristic": "#8B5CF6",
+      "transit": "#E65100",
+      "ink": "#0F172A"
+    }
+  },
+  "spec": {
+    "where_the_data_comes_from": "GTFS Fares V2, which the Edmonton ETS feed publishes in full: fare_products, fare_leg_rules, fare_transfer_rules, fare_media, areas, stop_areas.",
+    "trap_1": {
+      "name": "The feature flag is build-time",
+      "detail": "FaresV2 must be enabled in otp-config.json BEFORE the graph is built, because the fare rules are baked into graph.obj. Without it every leg returns an empty fare list.",
+      "why_it_bites": "An empty fare list reads exactly like 'this trip is free', not like 'we never looked'. Nothing errors."
+    },
+    "trap_2": {
+      "name": "The total is over use ids, not legs",
+      "detail": "OTP gives every leg covered by one purchase the SAME fare-product use id. The correct total sums the distinct ids. Summing per leg triples the price of a two-transfer trip.",
+      "why_it_bites": "$9.00 for a Mill Woods to West Edmonton Mall trip looks entirely plausible on screen. Nothing crashes. The rider is simply overcharged - and precisely on the journeys that transfer rules exist to protect."
+    },
+    "algorithm": [
+      {
+        "n": 1,
+        "label": "Walk every leg's fareProducts list"
+      },
+      {
+        "n": 2,
+        "label": "Key each entry by (payment medium, use id)"
+      },
+      {
+        "n": 3,
+        "label": "Skip any key already seen - that leg is already paid for"
+      },
+      {
+        "n": 4,
+        "label": "Accumulate the remaining amounts per medium"
+      },
+      {
+        "n": 5,
+        "label": "Sort media by price; the cheapest becomes the headline, the rest are returned as options"
+      }
+    ],
+    "worked_example": {
+      "journey": "Mill Woods to West Edmonton Mall - buses 523, 006 and 055, two transfers",
+      "naive_total": "$9.00",
+      "correct_total": "$3.00",
+      "verified_by": "a unit test that asserts three legs sharing one use id total 3.00, not 9.00"
+    },
+    "edmonton_prices": [
+      {
+        "medium": "Arc card",
+        "amount": 3.0,
+        "currency": "CAD"
+      },
+      {
+        "medium": "Contactless (cEMV)",
+        "amount": 3.0,
+        "currency": "CAD"
+      },
+      {
+        "medium": "Cash",
+        "amount": 3.75,
+        "currency": "CAD"
+      }
+    ],
+    "annotations": [
+      "A separate test asserts that an unpriced trip returns null rather than 0.00, so a feed that prices nothing never renders as a free ride.",
+      "This is the kind of bug tests are actually for: it never crashes, it just quietly produces a wrong number that looks right."
+    ]
+  }
+}

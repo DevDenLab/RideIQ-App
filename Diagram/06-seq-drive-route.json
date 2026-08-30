@@ -1,0 +1,156 @@
+{
+  "$comment": "Drive/walk routing: A* over the committed OSM graph, then the ML chain prices it.",
+  "meta": {
+    "project": "RideIQ",
+    "title": "Sequence - POST /route-latlon (drive or walk)",
+    "version": "1.0",
+    "diagram_type": "UML sequence",
+    "aspect_ratio": "4:3"
+  },
+  "image_prompt": "Draw a clean UML sequence diagram with four participants: 'Android app', 'FastAPI', 'routing.py (A* over city_graph)', 'models.py (ML)'. Number every message. Show the app sending pickup and drop-off lat/lon, the routing module snapping both points to the nearest graph nodes, running A*, then running A* again twice more with already-used roads penalised to produce alternative routes, then the ML module converting distance into an ETA and a fare, and finally a dashed response returning a polyline plus turn-by-turn steps. Add a labelled loop fragment around the alternative-route calls marked 'loop: up to 3 distinct routes'.",
+  "style": {
+    "look": "clean UML-style sequence diagram, flat modern, generous vertical spacing",
+    "conventions": [
+      "Participants across the top as labelled boxes with vertical dashed lifelines.",
+      "Solid arrow = request. Dashed arrow = response.",
+      "Self-call drawn as a small loop back onto the same lifeline.",
+      "Number every message so the reading order is unambiguous.",
+      "Draw alt / opt fragments as a labelled rectangle spanning the lifelines involved."
+    ],
+    "palette": {
+      "client": "#6366F1",
+      "edge": "#0F172A",
+      "api": "#22C55E",
+      "cache": "#EF4444",
+      "db": "#0EA5E9",
+      "ml": "#8B5CF6",
+      "transit": "#E65100",
+      "external": "#64748B"
+    }
+  },
+  "spec": {
+    "participants": [
+      {
+        "id": "app",
+        "label": "Android app",
+        "color": "#6366F1"
+      },
+      {
+        "id": "api",
+        "label": "FastAPI",
+        "color": "#22C55E"
+      },
+      {
+        "id": "routing",
+        "label": "routing.py - A* engine"
+      },
+      {
+        "id": "ml",
+        "label": "models.py - ML",
+        "color": "#8B5CF6"
+      }
+    ],
+    "messages": [
+      {
+        "n": 1,
+        "from": "app",
+        "to": "api",
+        "label": "POST /route-latlon {lat1, lon1, lat2, lon2, mode}",
+        "kind": "request"
+      },
+      {
+        "n": 2,
+        "from": "api",
+        "to": "routing",
+        "label": "route_latlon_multi(..., want=3)",
+        "kind": "request"
+      },
+      {
+        "n": 3,
+        "from": "routing",
+        "to": "routing",
+        "label": "pick graph: drive -> city_graph.json, walk -> walk_graph.json (falls back to drive if missing)",
+        "kind": "self"
+      },
+      {
+        "n": 4,
+        "from": "routing",
+        "to": "routing",
+        "label": "snap origin and destination to nearest graph nodes",
+        "kind": "self"
+      },
+      {
+        "n": 5,
+        "from": "routing",
+        "to": "routing",
+        "label": "A* with haversine heuristic -> best path",
+        "kind": "self"
+      },
+      {
+        "n": 6,
+        "from": "routing",
+        "to": "routing",
+        "label": "re-run A* with previous roads costing 2.4x -> a genuinely different route",
+        "kind": "self"
+      },
+      {
+        "n": 7,
+        "from": "routing",
+        "to": "routing",
+        "label": "build polyline, count turns, derive turn-by-turn steps from bearing changes",
+        "kind": "self"
+      },
+      {
+        "n": 8,
+        "from": "routing",
+        "to": "api",
+        "label": "up to 3 routes: polyline_latlon, distance_km, turns, steps",
+        "kind": "response"
+      },
+      {
+        "n": 9,
+        "from": "api",
+        "to": "ml",
+        "label": "predict_eta(distance_km, hour, weather, traffic)",
+        "kind": "request"
+      },
+      {
+        "n": 10,
+        "from": "api",
+        "to": "ml",
+        "label": "estimate_fare(distance_km, eta, surge)",
+        "kind": "request"
+      },
+      {
+        "n": 11,
+        "from": "api",
+        "to": "app",
+        "label": "200 primary route + alternatives, each with eta_min and fare_usd",
+        "kind": "response"
+      }
+    ],
+    "fragments": [
+      {
+        "type": "loop",
+        "label": "up to 3 distinct routes",
+        "covers": [
+          6
+        ],
+        "note": "each iteration penalises every edge used by the routes found so far, so the search is pushed onto different streets"
+      },
+      {
+        "type": "opt",
+        "label": "walk mode",
+        "covers": [
+          9,
+          10
+        ],
+        "note": "walking skips the fare model entirely: eta = distance / 4.8 km/h and fare_usd is 0"
+      }
+    ],
+    "annotations": [
+      "This path never touches the network - both graphs are baked into the container image.",
+      "Contrast with /transit: this answer does not depend on what time you ask."
+    ]
+  }
+}

@@ -1,0 +1,149 @@
+{
+  "$comment": "The navigation loop. Drive and walk only - transit mode deliberately has no voice nav.",
+  "meta": {
+    "project": "RideIQ",
+    "title": "Sequence - turn-by-turn navigation loop",
+    "version": "1.0",
+    "diagram_type": "UML sequence with a loop",
+    "aspect_ratio": "4:3"
+  },
+  "image_prompt": "Draw a UML sequence diagram with four participants: 'GPS / LocationManager', 'RouteMapActivity', 'Text-to-Speech', 'FastAPI'. Wrap most of the diagram in a large labelled loop fragment reading 'loop: every GPS fix, about 1 per second'. Inside it show the location update arriving, the map camera following, a distance calculation to the next manoeuvre, and two nested alt fragments: one labelled 'within 200 m and not yet announced' producing a spoken message like 'In 200 meters, turn left', and one labelled 'more than 80 m off route for 3 consecutive fixes' producing a re-route request to FastAPI. Below the loop, a final box labelled 'arrive - announce and stop navigation'.",
+  "style": {
+    "look": "clean UML-style sequence diagram, flat modern, generous vertical spacing",
+    "conventions": [
+      "Participants across the top as labelled boxes with vertical dashed lifelines.",
+      "Solid arrow = request. Dashed arrow = response.",
+      "Self-call drawn as a small loop back onto the same lifeline.",
+      "Number every message so the reading order is unambiguous.",
+      "Draw alt / opt fragments as a labelled rectangle spanning the lifelines involved."
+    ],
+    "palette": {
+      "client": "#6366F1",
+      "edge": "#0F172A",
+      "api": "#22C55E",
+      "cache": "#EF4444",
+      "db": "#0EA5E9",
+      "ml": "#8B5CF6",
+      "transit": "#E65100",
+      "external": "#64748B"
+    }
+  },
+  "spec": {
+    "participants": [
+      {
+        "id": "gps",
+        "label": "GPS / LocationManager"
+      },
+      {
+        "id": "act",
+        "label": "RouteMapActivity",
+        "color": "#6366F1"
+      },
+      {
+        "id": "tts",
+        "label": "Text-to-Speech"
+      },
+      {
+        "id": "api",
+        "label": "FastAPI",
+        "color": "#22C55E"
+      }
+    ],
+    "preconditions": [
+      "navSteps is non-empty - so the user routed in drive or walk mode",
+      "'Start trip' pressed; location permission granted",
+      "In TRANSIT mode navSteps is deliberately emptied and Start trip is disabled - a schedule-based plan has no manoeuvre to announce"
+    ],
+    "messages": [
+      {
+        "n": 1,
+        "from": "gps",
+        "to": "act",
+        "label": "onLocationChanged(lat, lon)",
+        "kind": "request"
+      },
+      {
+        "n": 2,
+        "from": "act",
+        "to": "act",
+        "label": "animate the map camera to the new position",
+        "kind": "self"
+      },
+      {
+        "n": 3,
+        "from": "act",
+        "to": "act",
+        "label": "distance to the current step's manoeuvre point",
+        "kind": "self"
+      },
+      {
+        "n": 4,
+        "from": "act",
+        "to": "tts",
+        "label": "speak 'In 200 meters, turn left onto <street>'",
+        "kind": "request"
+      },
+      {
+        "n": 5,
+        "from": "act",
+        "to": "act",
+        "label": "within 30 m of the manoeuvre -> advance to the next step",
+        "kind": "self"
+      },
+      {
+        "n": 6,
+        "from": "act",
+        "to": "api",
+        "label": "POST /route-latlon - recompute from the current position",
+        "kind": "request"
+      },
+      {
+        "n": 7,
+        "from": "act",
+        "to": "tts",
+        "label": "speak 'You have arrived at your destination'",
+        "kind": "request"
+      }
+    ],
+    "fragments": [
+      {
+        "type": "loop",
+        "label": "every GPS fix, about 1 Hz",
+        "covers": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      },
+      {
+        "type": "alt",
+        "label": "within 200 m of the manoeuvre and not yet announced",
+        "covers": [
+          4
+        ]
+      },
+      {
+        "type": "alt",
+        "label": "more than 80 m off route for 3 consecutive fixes",
+        "covers": [
+          6
+        ],
+        "note": "the threshold plus the consecutive-fix requirement stops a single bad GPS reading triggering a re-route"
+      }
+    ],
+    "tuning": {
+      "announce_ahead_m": 200,
+      "manoeuvre_hit_m": 30,
+      "off_route_m": 80,
+      "speech_rate": 1.2,
+      "pitch": 0.85
+    },
+    "annotations": [
+      "No voice navigation for transit in v1, on purpose. A transit plan is schedule-based, not turn-based - there is no manoeuvre to announce.",
+      "This is also the biggest product gap: the app plans a transit trip and then goes silent. No position tracking, no 'get off at the next stop' alert, no notifications - none of that exists yet."
+    ]
+  }
+}

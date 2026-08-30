@@ -1,17 +1,29 @@
-# pgmpy 1.1.2 needs numpy>=2.0, so the whole scientific stack is on numpy 2.x.
-numpy>=2.0,<3
-scikit-learn>=1.5
-scipy>=1.13
-matplotlib>=3.8
-hmmlearn>=0.3.2
-pgmpy==1.1.2
-networkx>=3.2
+# Pinned exactly, on purpose.
+#
+# These were version ranges until now, which meant two builds of the same commit
+# could install different dependencies -- so rolling back to a known-good SHA did
+# not restore a known-good BUILD. Ranges also mean an upstream release can break
+# production on a deploy that changed nothing.
+#
+# The versions below are the ones the project has actually been running and
+# testing against. To move one, change it here deliberately and let CI tell you.
+#
+# Note pgmpy 1.1.2 requires numpy>=2.0, which is what puts the whole scientific
+# stack on numpy 2.x.
 
-fastapi>=0.111,<0.113
-uvicorn[standard]>=0.30
-pydantic>=2.7
-redis>=5.0
+numpy==2.2.6
+scikit-learn==1.7.2
+scipy==1.15.3
+matplotlib==3.10.9
+hmmlearn==0.3.3
+pgmpy==1.1.2
+networkx==3.4.2
+
+fastapi==0.112.4
+uvicorn[standard]==0.52.1
+pydantic==2.13.4
+redis==8.1.0
 
 # Transit itineraries are timestamped in America/Edmonton. python:3.11-slim ships
 # without a system tz database, so zoneinfo needs this to resolve the zone at all.
-tzdata>=2024.1
+tzdata==2026.2

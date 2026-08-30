@@ -228,6 +228,9 @@ public class RouteMapActivity extends AppCompatActivity {
         ((Button) findViewById(R.id.directionsBtn)).setOnClickListener(v -> openDirections());
         ((Button) findViewById(R.id.streetViewBtn)).setOnClickListener(v -> openStreetView());
         ((Button) findViewById(R.id.transitBtn)).setOnClickListener(v -> openTransit());
+        // The map is the main content of this screen and TalkBack should say so
+        // rather than skipping silently over it.
+        map.setContentDescription(getString(R.string.map_content_description));
         driveBtn = findViewById(R.id.driveBtn);
         walkBtn = findViewById(R.id.walkBtn);
         transitModeBtn = findViewById(R.id.transitModeBtn);
@@ -814,6 +817,24 @@ public class RouteMapActivity extends AppCompatActivity {
                 card.addView(live);
             }
 
+            // TalkBack reads a card built from four TextViews as four unrelated
+            // fragments. Describe the option once, coherently, and hide the parts.
+            StringBuilder spoken = new StringBuilder();
+            spoken.append(it.walkOnly ? "Walk all the way" : routeSummary(it));
+            spoken.append(String.format(Locale.US, ", %d minutes", it.durationMin));
+            spoken.append(", ").append(transfers);
+            spoken.append(String.format(Locale.US, ", departs %s, arrives %s",
+                    it.departTime, it.arriveTime));
+            if (it.fare != null && !it.walkOnly)
+                spoken.append(String.format(Locale.US, ", %.2f dollars", it.fare.amount));
+            if (it.realtime && it.status != null) spoken.append(", live, ").append(it.status);
+            spoken.append(sel ? ", selected" : "");
+            card.setContentDescription(spoken.toString());
+            for (int c = 0; c < card.getChildCount(); c++) {
+                card.getChildAt(c).setImportantForAccessibility(
+                        View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            }
+
             card.setOnClickListener(v -> selectItinerary(idx));
             optionsRow.addView(card);
         }
@@ -1068,6 +1089,17 @@ public class RouteMapActivity extends AppCompatActivity {
             arr.setTextSize(11);
             arr.setTextColor(Color.parseColor("#888888"));
             card.addView(arr);
+
+            card.setContentDescription(String.format(Locale.US,
+                    "%s, %.0f minutes, %.1f kilometres, %s, arrive %s%s",
+                    i == 0 ? "Recommended route" : "Alternative route",
+                    o.etaMin, o.distanceKm,
+                    walk ? "walking" : String.format(Locale.US, "%.2f dollars", o.fareUsd),
+                    arrivalTime(o.etaMin), sel ? ", selected" : ""));
+            for (int c = 0; c < card.getChildCount(); c++) {
+                card.getChildAt(c).setImportantForAccessibility(
+                        View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            }
 
             card.setOnClickListener(v -> selectOption(idx));
             optionsRow.addView(card);

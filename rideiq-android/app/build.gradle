@@ -35,6 +35,11 @@ android {
 }
 
 dependencies {
+    // JVM unit tests. TransitProgress is deliberately plain Java with no Android
+    // imports, so the logic that decides "when do I tell someone to get off" runs
+    // on a normal JVM in milliseconds -- no emulator, no instrumentation.
+    testImplementation 'junit:junit:4.13.2'
+
     implementation 'androidx.appcompat:appcompat:1.7.0'
     implementation 'com.google.android.material:material:1.12.0'
     implementation 'com.squareup.retrofit2:retrofit:2.11.0'

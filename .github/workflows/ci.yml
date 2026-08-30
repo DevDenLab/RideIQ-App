@@ -127,9 +127,24 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
+      # Unit tests before the build: they run in seconds on a plain JVM and catch
+      # the logic errors that compiling never will. Until now "android app
+      # compiles" was the entire Android quality gate.
+      - name: Unit tests
+        working-directory: rideiq-android
+        run: ./gradlew testDebugUnitTest --console=plain --no-daemon
+
       - name: assembleDebug
         working-directory: rideiq-android
         run: ./gradlew assembleDebug --console=plain --no-daemon
+
+      - name: Upload test report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-test-report-${{ github.sha }}
+          path: rideiq-android/app/build/reports/tests/
+          if-no-files-found: ignore
 
       - name: Upload the APK
         uses: actions/upload-artifact@v4

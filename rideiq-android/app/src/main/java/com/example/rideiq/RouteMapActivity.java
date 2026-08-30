@@ -268,9 +268,25 @@ public class RouteMapActivity extends AppCompatActivity {
 
         setupMyLocation();
 
-        // Restoring must win over "set pickup to my location": after a rotation the
-        // user's chosen start point would otherwise jump back to where they stand.
+        // Two different kinds of "do not lose the user's plan", in order of how
+        // exact they are:
+        //
+        //   restoreState()  the SAME process coming back from a rotation. Exact:
+        //                   every itinerary, the selected one, both pins.
+        //   showSavedPlan() a NEW process, typically after the app was killed
+        //                   mid-journey and reopened underground with no signal.
+        //                   Only the plan being followed, and clearly labelled as
+        //                   saved.
+        //
+        // Either must win over "set pickup to my location", or a restored start
+        // point silently jumps back to wherever the user happens to be standing.
         boolean restored = restoreState();
+        if (!restored && PlanStore.isFreshEnoughToRestore(this)) {
+            travelMode = "transit";
+            updateModePills();
+            restored = showSavedPlan();
+        }
+
         if (restored) {
             // nothing further -- the plan is already back on the map
         } else if (hasLocationPermission()) {
@@ -789,9 +805,53 @@ public class RouteMapActivity extends AppCompatActivity {
                                                     @NonNull Throwable t) {
                         progress.setVisibility(View.GONE);
                         revealPanels();
+                        if (showSavedPlan()) return;
                         info.setText("Can't reach server. Is the backend running and BASE_URL correct?");
                     }
                 });
+    }
+
+    /**
+     * Offer the last saved plan when the network is gone.
+     *
+     * Only ever a FALLBACK, never a silent substitute: the banner says plainly
+     * that this is a saved plan and when it was saved, because a timetable-bound
+     * plan presented as current is worse than no plan at all.
+     */
+    /** First named place in the plan -- the boarding stop, or where you set off. */
+    private String itineraryStart(ApiModels.Itinerary it) {
+        if (it.legs == null || it.legs.isEmpty()) return "";
+        for (ApiModels.TransitLeg l : it.legs) {
+            if (l.isRide() && l.fromName != null) return l.fromName;
+        }
+        return it.legs.get(0).fromName == null ? "" : it.legs.get(0).fromName;
+    }
+
+    /** Last named place -- the final alighting stop, or the destination. */
+    private String itineraryEnd(ApiModels.Itinerary it) {
+        if (it.legs == null || it.legs.isEmpty()) return "";
+        for (int i = it.legs.size() - 1; i >= 0; i--) {
+            ApiModels.TransitLeg l = it.legs.get(i);
+            if (l.isRide() && l.toName != null) return l.toName;
+        }
+        String last = it.legs.get(it.legs.size() - 1).toName;
+        return last == null ? "" : last;
+    }
+
+    private boolean showSavedPlan() {
+        ApiModels.Itinerary saved = PlanStore.load(this);
+        if (saved == null) return false;
+        List<ApiModels.Itinerary> one = new ArrayList<>();
+        one.add(saved);
+        transitOptions = one;
+        selectedItinerary = 0;
+        buildTransitCards();
+        optionsScroll.setVisibility(View.VISIBLE);
+        drawItinerary(saved);
+        info.setText("No connection - showing your saved plan.\n"
+                + PlanStore.describe(this)
+                + "\nTimes are from when it was saved, so check them before relying on them.");
+        return true;
     }
 
     private void showTransitOptions(List<ApiModels.Itinerary> its) {
@@ -928,6 +988,13 @@ public class RouteMapActivity extends AppCompatActivity {
 
     /** Draw each leg in its own colour: walk legs dashed grey, each ride solid. */
     private void drawItinerary(ApiModels.Itinerary it) {
+        // Keep it on disk so losing signal does not lose the trip -- which is
+        // exactly what happens on the LRT, underground, mid-journey.
+        // Label it from the ITINERARY, not from the on-screen pickup/drop-off text.
+        // Those fields still hold placeholder hints when a plan arrives before the
+        // reverse-geocode does, which produced a saved plan described as
+        // "waiting for your location... to tap the map to set it".
+        PlanStore.save(this, it, itineraryStart(it), itineraryEnd(it));
         clearRouteOverlays();
         if (it.legs == null) return;
 

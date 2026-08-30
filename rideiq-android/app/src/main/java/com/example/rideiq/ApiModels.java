@@ -113,9 +113,20 @@ public class ApiModels {
         @SerializedName("duration_min") public int durationMin;
         @SerializedName("polyline_latlon")
         public java.util.List<java.util.List<Double>> polylineLatlon;
+        /** Every stop this vehicle calls at: boarding first, alighting last. */
+        public java.util.List<TransitStop> stops;
+        @SerializedName("stop_count") public int stopCount;
 
         /** True when you are riding something rather than walking to it. */
         public boolean isRide() { return mode != null && !"WALK".equals(mode); }
+    }
+
+    /** One stop a vehicle calls at along a ride leg. */
+    public static class TransitStop {
+        public String name;
+        public String code;      // the number on the pole, e.g. "3850"
+        public double lat;
+        public double lon;
     }
 
     /**

@@ -39,6 +39,7 @@
     <string name="transit_step_free">♿ Step-free</string>
     <string name="map_toggle_expand">Hide the panels and show the whole map</string>
     <string name="map_toggle_collapse">Show the search and route panels again</string>
+    <string name="map_content_description">Map showing your route. Use the buttons below to plan a trip.</string>
     <string name="directions_btn">Steps</string>
     <string name="street_view_btn">Street view</string>
     <!-- Fallback handoff to Google Maps, kept for when our own engine is down. -->
@@ -54,5 +55,45 @@
     <string name="settings_mode">Default travel mode: driving</string>
     <string name="settings_units">Distance units: kilometres</string>
     <string name="about_title">About</string>
-    <string name="about_body">RideIQ — a self-hosted navigation app powered by machine learning. Maps and routing use free OpenStreetMap data. Version 1.0.</string>
+    <string name="about_body">RideIQ runs entirely on free, open data. No Google Maps API, no paid routing service, and no API keys for any of the sources below.
+
+
+MAP DATA
+
+Map tiles and the street network come from OpenStreetMap, © OpenStreetMap contributors, licensed under the Open Database Licence (ODbL).
+
+https://www.openstreetmap.org/copyright
+
+
+The driving and walking route graphs in this app are derived from OpenStreetMap data, so the ODbL applies to them too, not only to the map you can see.
+
+
+TRANSIT DATA
+
+Schedules, live vehicle positions and service alerts come from the City of Edmonton Open Data Portal, covering Edmonton Transit Service, St. Albert Transit, Strathcona County Transit, Spruce Grove Transit, Fort Saskatchewan Transit, Beaumont Transit and Leduc Transit.
+
+https://data.edmonton.ca
+
+
+ROUTING ENGINE
+
+Public transit journeys are planned by OpenTripPlanner, used unmodified and licensed under the LGPL.
+
+https://www.opentripplanner.org
+
+
+Satellite imagery is provided by Esri, Maxar and Earthstar Geographics.
+
+
+ABOUT THE TIMES AND FARES
+
+Departure times, arrival times and fares are estimates based on published schedules and live feeds. Those feeds are sometimes delayed, sometimes incomplete, and for some routes not live at all — in practice buses report live positions far more often than the LRT does. When no live data is available the app shows the scheduled time and no live badge, rather than guessing.
+
+
+Do not rely on this app alone where missing a connection would matter. Check with the operator.
+
+
+LOCATION
+
+Your location is used to set your pickup point, to draw your position on the map, and during a transit ride to work out which stop you are approaching. Ride tracking happens on your device. Planning a trip sends the start and end coordinates to the RideIQ server so a route can be calculated.</string>
 </resources>

@@ -27,6 +27,7 @@ from pydantic import BaseModel
 
 import models as M
 import places as P
+import resilience as RES
 import routing as R
 import transit_client as T
 
@@ -180,7 +181,12 @@ def health():
 @app.get("/metrics")
 def metrics():
     hr = METRICS["cache_hits"] / METRICS["requests"] if METRICS["requests"] else 0
-    return {**METRICS, "cache_hit_rate": round(hr, 3), "instance": INSTANCE}
+    g = OTP_GUARD.state()
+    return {**METRICS, "cache_hit_rate": round(hr, 3),
+            "otp_breaker": g["breaker"]["state"],
+            "otp_in_flight": g["bulkhead"]["in_flight"],
+            "otp_shed": g["bulkhead"]["rejected"] + g["breaker"]["rejected"],
+            "instance": INSTANCE}
 
 
 @app.get("/pipeline")
@@ -396,6 +402,46 @@ def route_latlon(i: RouteLatLonIn):
 TRANSIT_TTL = int(os.environ.get("TRANSIT_CACHE_TTL", "120"))
 TRANSIT_BUCKET_S = 300           # round the query clock to 5 min so repeats hit
 
+# How many requests may be inside OTP at once. FastAPI runs sync endpoints in a
+# threadpool of 40, and /transit blocks for up to OTP_TIMEOUT seconds, so without
+# a cap a slow OTP parks every thread and takes /health and /quote down with it.
+# 8 leaves 32 threads for everything that has nothing to do with transit.
+OTP_CONCURRENCY = int(os.environ.get("OTP_CONCURRENCY", "8"))
+OTP_FAIL_THRESHOLD = int(os.environ.get("OTP_FAIL_THRESHOLD", "5"))
+OTP_BREAKER_RESET_S = float(os.environ.get("OTP_BREAKER_RESET_S", "30"))
+
+# Only TransitUnavailable counts as OTP's fault. urllib raises it for both a
+# refused connection and a timeout, which are exactly the two things a breaker
+# should react to. A RuntimeError from OTP rejecting a GraphQL query is OUR bug:
+# it will fail identically on every retry, and letting it open the circuit would
+# mean one malformed request disables transit for everybody.
+OTP_GUARD = RES.Guard("opentripplanner", limit=OTP_CONCURRENCY,
+                      failure_types=(T.TransitUnavailable,),
+                      fail_threshold=OTP_FAIL_THRESHOLD,
+                      reset_after=OTP_BREAKER_RESET_S)
+
+
+def _otp_unavailable(e):
+    """Map any "transit is not answering" case onto a 503 the app already handles.
+
+    Retry-After is not decoration. When the breaker is open it knows exactly how
+    long it intends to stay that way, and telling the client instead of making it
+    guess is the difference between a backoff and a retry storm. Every 503 from
+    these endpoints carries one, including a plain unreachable-OTP failure --
+    a client that has no idea when to come back will come back immediately.
+    """
+    retry = 5
+    st = OTP_GUARD.breaker.state()
+    if isinstance(e, RES.CircuitOpen):
+        retry = max(1, int(st.get("retry_in_s") or st["cooldown_s"]))
+    elif isinstance(e, RES.Overloaded):
+        retry = 2                      # a spike passes; do not send them far away
+    elif st["state"] == "open":
+        # The call that just tripped the breaker. Nothing will get through until
+        # the cooldown elapses, so say so.
+        retry = max(1, int(st["cooldown_s"]))
+    raise HTTPException(503, str(e), headers={"Retry-After": str(retry)})
+
 
 @app.get("/transit")
 def transit(lat1: float, lon1: float, lat2: float, lon2: float,
@@ -418,12 +464,14 @@ def transit(lat1: float, lon1: float, lat2: float, lon2: float,
         return {**hit, "cached": True, "instance": INSTANCE}
 
     try:
-        out = T.plan(lat1, lon1, lat2, lon2, depart=depart, arrive_by=arrive_by,
-                     max_walk_m=max_walk_m, wheelchair=wheelchair, want=want)
-    except T.TransitUnavailable as e:
+        # Guarded, not bare. Everything inside is one blocking network call.
+        with OTP_GUARD:
+            out = T.plan(lat1, lon1, lat2, lon2, depart=depart, arrive_by=arrive_by,
+                         max_walk_m=max_walk_m, wheelchair=wheelchair, want=want)
+    except (RES.CircuitOpen, RES.Overloaded, T.TransitUnavailable) as e:
         # The engine is a separate service; if it is down that is a 503, not a
         # broken request, and the app should fall back rather than show an error.
-        raise HTTPException(503, str(e))
+        _otp_unavailable(e)
     except ValueError as e:
         raise HTTPException(400, "bad depart time: %s" % e)
     except RuntimeError as e:
@@ -455,13 +503,25 @@ def transit_vehicles(pattern: str):
         METRICS["cache_hits"] += 1
         return {**hit, "cached": True, "instance": INSTANCE}
     try:
-        out = T.vehicles(pattern)
-    except T.TransitUnavailable as e:
-        raise HTTPException(503, str(e))
+        with OTP_GUARD:
+            out = T.vehicles(pattern)
+    except (RES.CircuitOpen, RES.Overloaded, T.TransitUnavailable) as e:
+        _otp_unavailable(e)
     except RuntimeError as e:
         raise HTTPException(502, str(e))
     cache_set(key, out, ttl=15)
     return {**out, "cached": False, "instance": INSTANCE}
+
+
+@app.get("/resilience")
+def resilience():
+    """What the guards around OTP are doing right now.
+
+    Deliberately its own endpoint rather than a field on /health. /health is
+    polled by the load balancer several times a minute and must stay trivial;
+    this is for a human asking why transit is refusing requests.
+    """
+    return {"opentripplanner": OTP_GUARD.state(), "instance": INSTANCE}
 
 
 @app.get("/transit/status")

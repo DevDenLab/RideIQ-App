@@ -32,3 +32,12 @@ rideiq-backend/transit/data/
 # Local runtime state
 rideiq-backend/rideiq.db
 rideiq-backend/cache/
+
+# Trained challenger models and the request log. Both are runtime state that
+# differs per deployment: challenger.joblib is produced by retrain.py from
+# whatever outcomes that host has collected, and rideiq.db IS those outcomes.
+# Committing either would ship one machine's data to every other one.
+rideiq-backend/challenger.joblib
+rideiq-backend/rideiq.db
+rideiq-backend/rideiq.db-wal
+rideiq-backend/rideiq.db-shm

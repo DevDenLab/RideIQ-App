@@ -25,6 +25,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+import mlloop as ML
 import models as M
 import places as P
 import resilience as RES
@@ -104,9 +105,13 @@ def db():
 
 
 with db() as _c:
-    _c.execute("""CREATE TABLE IF NOT EXISTS quotes(
-        id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL,
-        distance REAL, hour INT, eta REAL, fare REAL, cancel_risk REAL, instance TEXT)""")
+    ML.ensure_schema(_c)
+
+# The challenger is loaded once and scored in the background. Absent on a fresh
+# deployment, which is the normal state: there is nothing to train one on until
+# real trip outcomes have been collected.
+CHALLENGER = ML.Challenger()
+SHADOW = ML.ShadowRunner(CHALLENGER, db)
 
 METRICS = {"requests": 0, "cache_hits": 0}
 
@@ -140,6 +145,15 @@ class RouteIn(BaseModel):
     mode: str = "drive"          # "drive" or "walk"
 
 
+class TripOutcomeIn(BaseModel):
+    """What actually happened, reported by the app when a trip ends."""
+    quote_id: int
+    actual_min: float
+    actual_fare: float = None
+    completed: bool = True
+    source: str = "app"
+
+
 class RouteLatLonIn(BaseModel):
     lat1: float; lon1: float; lat2: float; lon2: float
     hour: int = 8; weather: int = 0; traffic: float = 0.5; surge: float = 1.0
@@ -149,15 +163,43 @@ class RouteLatLonIn(BaseModel):
 WALK_SPEED_KMH = 4.8             # average walking pace, for walk-mode ETA
 
 
-def _price_route(rt, i):
-    """Attach ETA + fare to a route result, mode-aware. Walking has an ETA but no fare."""
+def _price_route(rt, i, endpoint=None, log=False):
+    """Attach ETA + fare to a route result, mode-aware. Walking has an ETA but no fare.
+
+    `log` writes the prediction and its features to the quotes table and puts the
+    returned id on the response as quote_id. This is the input to the whole
+    feedback loop and it did not exist: /quote logged, but the app never calls
+    /quote -- every prediction a rider has ever seen came through here and
+    vanished. Only the primary route is logged, not the alternatives, because an
+    alternative the rider did not take has no outcome to wait for.
+    """
     if rt.get("mode") == "walk":
+        # A walking ETA is distance over a constant. There is no model, so there
+        # is nothing to learn and nothing worth logging.
         eta_min = round(rt["distance_km"] / WALK_SPEED_KMH * 60.0, 1)
         return {**rt, "eta_min": eta_min, "fare_usd": 0.0, "instance": INSTANCE}
+
     eta = M.predict_eta(rt["distance_km"], i.hour, i.weather, i.traffic)
     fare = M.estimate_fare(rt["distance_km"], eta["ensemble_min"], i.surge)
-    return {**rt, "eta_min": eta["ensemble_min"], "fare_usd": fare["random_forest"],
-            "instance": INSTANCE}
+    out = {**rt, "eta_min": eta["ensemble_min"], "fare_usd": fare["random_forest"],
+           "instance": INSTANCE}
+    if log:
+        try:
+            with db() as c:
+                qid = ML.log_prediction(
+                    c, distance=rt["distance_km"], hour=i.hour, weather=i.weather,
+                    traffic=i.traffic, surge=i.surge, eta=eta["ensemble_min"],
+                    fare=fare["random_forest"], instance=INSTANCE,
+                    mode=rt.get("mode", "drive"), endpoint=endpoint)
+            out["quote_id"] = qid
+            # Non-blocking. The challenger runs on another thread and cannot
+            # slow this response down or break it.
+            SHADOW.submit(qid, rt["distance_km"], i.traffic, i.weather, i.hour,
+                          eta["ensemble_min"])
+        except Exception:
+            # Losing a log row must never cost a rider their route.
+            pass
+    return out
 
 
 # Preset Edmonton landmarks (real coordinates). Used once a real OSM city is loaded.
@@ -232,7 +274,7 @@ def route(i: RouteIn):
     routes = R.route_multi(i.ax, i.ay, i.bx, i.by, mode=i.mode, want=3)
     if not routes:
         raise HTTPException(400, "no route found")
-    primary = _price_route(routes[0], i)
+    primary = _price_route(routes[0], i, endpoint="/route", log=True)
     primary["alternatives"] = [_price_route(r, i) for r in routes[1:]]
     return primary
 
@@ -391,7 +433,7 @@ def route_latlon(i: RouteLatLonIn):
     routes = R.route_latlon_multi(i.lat1, i.lon1, i.lat2, i.lon2, mode=i.mode, want=3)
     if not routes:
         raise HTTPException(400, "no route found")
-    primary = _price_route(routes[0], i)
+    primary = _price_route(routes[0], i, endpoint="/route-latlon", log=True)
     primary["alternatives"] = [_price_route(r, i) for r in routes[1:]]
     return primary
 
@@ -548,9 +590,12 @@ def quote(i: QuoteIn):
            "cancellation_risk": cancel["consensus"], "cancellation_detail": cancel,
            "instance": INSTANCE}
     with db() as c:
-        c.execute("INSERT INTO quotes(ts,distance,hour,eta,fare,cancel_risk,instance) VALUES(?,?,?,?,?,?,?)",
-                  (time.time(), i.distance, i.hour, duration, fare["random_forest"],
-                   cancel["consensus"], INSTANCE))
+        out["quote_id"] = ML.log_prediction(
+            c, distance=i.distance, hour=i.hour, weather=i.weather,
+            traffic=i.traffic, surge=i.surge, eta=duration,
+            fare=fare["random_forest"], cancel_risk=cancel["consensus"],
+            instance=INSTANCE, endpoint="/quote")
+    SHADOW.submit(out["quote_id"], i.distance, i.traffic, i.weather, i.hour, duration)
     return out
 
 
@@ -584,3 +629,50 @@ def driver_shift():
 @app.get("/cancellation-causes")
 def cancellation_causes():
     return _cached_analytic("an:causes", M.cancellation_causes)
+
+
+# ---- the feedback loop (see mlloop.py) ------------------------------------
+@app.post("/trip-outcome")
+def trip_outcome(i: TripOutcomeIn):
+    """Report what a trip actually cost in minutes. The only real training signal.
+
+    Every model in this service was fitted to synthetically generated trips, so
+    until this endpoint has been called a few hundred times there is no evidence
+    anywhere in the system about how long a journey in Edmonton really takes.
+
+    Validated rather than trusted. A phone that slept mid-trip, or a service that
+    was killed and restarted, will happily report a nine-hour bus ride, and a
+    handful of those would wreck a regression -- so implausible durations are
+    rejected here rather than filtered later.
+    """
+    METRICS["requests"] += 1
+    if not (0.5 <= i.actual_min <= 600):
+        raise HTTPException(400, "actual_min %.1f is not a plausible trip duration"
+                                 % i.actual_min)
+    with db() as c:
+        oid = ML.log_outcome(c, i.quote_id, i.actual_min, i.actual_fare,
+                             i.completed, i.source)
+    if oid is None:
+        raise HTTPException(404, "unknown quote_id %d -- nothing to attribute this to"
+                                 % i.quote_id)
+    return {"recorded": True, "outcome_id": oid, "instance": INSTANCE}
+
+
+@app.get("/training-data")
+def training_data():
+    """How much real data exists, and whether it is yet enough to retrain on."""
+    with db() as c:
+        return {**ML.data_status(c), "instance": INSTANCE}
+
+
+@app.get("/shadow-report")
+def shadow_report():
+    """Champion versus challenger on live traffic.
+
+    Disagreement is available as soon as a challenger exists. Accuracy needs trip
+    outcomes, and until those arrive this deliberately declines to name a winner
+    -- two models differing tells you nothing about which one is right.
+    """
+    with db() as c:
+        rep = ML.shadow_report(c)
+    return {**rep, "runner": SHADOW.state(), "instance": INSTANCE}

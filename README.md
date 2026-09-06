@@ -178,12 +178,36 @@ RideIQ-App/
 ├─ rideiq-backend/          FastAPI backend (Python)
 │  ├─ app.py                API endpoints
 │  ├─ routing.py            A* routing (drive + walk graphs)
-│  ├─ models.py             15 ML models
+│  ├─ spatial.py            k-d tree: "which graph node is nearest here"
+│  ├─ places.py             local trie behind /search (no network per keystroke)
+│  ├─ resilience.py         circuit breaker + bulkhead around OpenTripPlanner
+│  ├─ mlloop.py             log predictions, collect outcomes, shadow-score
+│  ├─ retrain.py            fit a challenger model on real outcomes only
+│  ├─ models.py             16 ML models
+│  ├─ transit_client.py     OpenTripPlanner -> RideIQ legs
 │  ├─ build_city_graph.py   build road graphs from OpenStreetMap
+│  ├─ build_places.py       build places.json from GTFS + the road graphs
 │  ├─ requirements.txt
 │  ├─ Dockerfile / docker-compose.yml
-│  └─ city_graph.json       (walk_graph.json is optional, see §6)
+│  ├─ city_graph.json       (walk_graph.json is optional, see §6)
+│  └─ places.json           the autocomplete gazetteer (committed)
 ├─ rideiq-android/          Android app (Java)
 │  └─ app/src/main/java/com/example/rideiq/…
 └─ .github/workflows/       CI/CD (deploy-rideiq, build-city-graph)
 ```
+
+### Operational endpoints
+
+Beyond the product API, four endpoints exist to answer questions about the
+service itself rather than about a trip:
+
+| Endpoint | Answers |
+|---|---|
+| `GET /resilience` | Is the OpenTripPlanner circuit open, and how many requests is it shedding? |
+| `GET /training-data` | How many real trip outcomes have been collected, and is that enough to retrain on? |
+| `GET /shadow-report` | How does the challenger model compare to the one being served? |
+| `POST /trip-outcome` | What a finished trip actually took — the only non-synthetic training signal in the system. |
+
+`retrain.py --status` reports the same data volume from the command line.
+It will not fit a model on fewer than 500 real outcomes, and a fresh
+deployment has none.

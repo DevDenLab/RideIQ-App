@@ -174,6 +174,16 @@ public class RouteMapActivity extends AppCompatActivity {
     private TextToSpeech tts;
     private boolean ttsReady = false;
     private boolean navigating = false;
+
+    /**
+     * The prediction the current drive is being measured against, and when it was
+     * made. Reset on every re-route, because a re-route IS a new prediction --
+     * OTP aside, the ETA it returns covers the remaining trip from where you now
+     * are, so timing it from the original departure would score the model against
+     * a journey it never predicted.
+     */
+    private long navQuoteId = -1;
+    private long navQuoteAtMs = 0;
     private List<ApiModels.Step> navSteps = new ArrayList<>();
     private List<GeoPoint> routePts = new ArrayList<>();
     private final Set<Integer> preAnnounced = new HashSet<>();
@@ -749,6 +759,7 @@ public class RouteMapActivity extends AppCompatActivity {
                     return;
                 }
                 ApiModels.RouteResponse body = r.body();
+                rememberQuote(body);
                 if (navigating) { drawRoute(body, label); return; }
                 List<ApiModels.RouteResponse> opts = new ArrayList<>();
                 opts.add(body);
@@ -1308,6 +1319,54 @@ public class RouteMapActivity extends AppCompatActivity {
                 Toast.LENGTH_LONG).show();
     }
 
+    /**
+     * Remember which prediction this drive is being measured against.
+     *
+     * Driving only. A transit ETA comes from OpenTripPlanner reading a timetable,
+     * not from the ML model, so reporting one as a trip outcome would poison the
+     * training set with the schedule's own numbers -- the model would learn to
+     * reproduce OTP rather than to predict traffic.
+     */
+    private void rememberQuote(ApiModels.RouteResponse body) {
+        if (body == null || body.quoteId == null || !"drive".equals(body.mode)) {
+            navQuoteId = -1;
+            return;
+        }
+        navQuoteId = body.quoteId;
+        navQuoteAtMs = System.currentTimeMillis();
+    }
+
+    /**
+     * Tell the server what the drive actually took.
+     *
+     * This is the input the whole feedback loop was missing. Every ETA model in
+     * the service was fitted to synthetically generated trips; one real journey
+     * reported here is worth more as evidence than the entire training set.
+     *
+     * Fire and forget, and deliberately silent either way. A rider who has just
+     * arrived should not be shown a toast about telemetry, and a failed report
+     * costs a training row -- nothing they care about.
+     */
+    private void reportTripOutcome() {
+        if (navQuoteId <= 0 || navQuoteAtMs <= 0) return;
+        double minutes = (System.currentTimeMillis() - navQuoteAtMs) / 60000.0;
+        long quoteId = navQuoteId;
+        navQuoteId = -1;                       // never report the same drive twice
+        // The server rejects implausible durations anyway, but there is no point
+        // sending one: a phone that slept, or an app resumed the next morning,
+        // produces exactly this.
+        if (minutes < 0.5 || minutes > 600) return;
+
+        ApiClient.get().tripOutcome(new ApiModels.TripOutcomeRequest(quoteId, minutes))
+                .enqueue(new retrofit2.Callback<ApiModels.TripOutcomeResponse>() {
+                    @Override public void onResponse(
+                            retrofit2.Call<ApiModels.TripOutcomeResponse> c,
+                            retrofit2.Response<ApiModels.TripOutcomeResponse> r) { }
+                    @Override public void onFailure(
+                            retrofit2.Call<ApiModels.TripOutcomeResponse> c, Throwable t) { }
+                });
+    }
+
     private void startTrip() {
         if ("transit".equals(travelMode)) { startTransitRide(); return; }
         if (navSteps == null || navSteps.isEmpty()) {
@@ -1375,6 +1434,7 @@ public class RouteMapActivity extends AppCompatActivity {
             if (arrive) {
                 speak("You have arrived at your destination.");
                 navBanner.setText("Arrived.");
+                reportTripOutcome();
                 stopTrip();
             } else {
                 speak(step.instruction + " now.");

@@ -59,6 +59,36 @@ public class ApiModels {
         public String mode;                  // "drive" or "walk" (which graph served this)
         @SerializedName("mode_fallback") public boolean modeFallback;  // true if walk fell back to drive
         public java.util.List<RouteResponse> alternatives;   // slower alternative routes
+        /**
+         * Server-side id for this prediction, so the app can later report what
+         * the trip actually took. Present only on the primary route -- an
+         * alternative the rider did not take has no outcome to wait for.
+         */
+        @SerializedName("quote_id") public Long quoteId;
+    }
+
+    /**
+     * What a trip actually cost, reported when it ends.
+     *
+     * The only training signal in the system that is not synthetic. Every model
+     * was fitted to generated trips, so until these start arriving there is no
+     * evidence anywhere about how long a journey in Edmonton really takes.
+     */
+    public static class TripOutcomeRequest {
+        @SerializedName("quote_id") public long quoteId;
+        @SerializedName("actual_min") public double actualMin;
+        public boolean completed = true;
+        public String source = "android";
+
+        public TripOutcomeRequest(long quoteId, double actualMin) {
+            this.quoteId = quoteId;
+            this.actualMin = actualMin;
+        }
+    }
+
+    public static class TripOutcomeResponse {
+        public boolean recorded;
+        @SerializedName("outcome_id") public Long outcomeId;
     }
 
     /** One turn-by-turn maneuver: where to act, what to do, and distance to it. */

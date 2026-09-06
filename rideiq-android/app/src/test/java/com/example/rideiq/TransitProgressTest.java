@@ -218,6 +218,49 @@ public class TransitProgressTest {
         assertTrue("expected the near vehicle, got " + d + " m", d < 100);
     }
 
+    // ── how sure are we of our OWN position ────────────────────────────────
+
+    @Test public void certainOfOurPositionAndFarFromEveryVehicle_isAWarning() {
+        List<ApiModels.Vehicle> vs = new ArrayList<>();
+        vs.add(vehicle(53.544000, -113.492000));
+        // 6 km away, and we know where we are to within 10 m.
+        assertTrue(TransitProgress.looksLikeWrongVehicle(vs, 53.490000, -113.492000, 10));
+    }
+
+    /**
+     * The tunnel case, and the reason the overload exists.
+     *
+     * Coasting through the LRT's underground section, the position estimate
+     * decays steadily. A fixed 700 m threshold would eventually accuse every
+     * rider on the Capital Line of being on the wrong train -- at precisely the
+     * moment there is no evidence either way. Being unsure is a reason to say
+     * less, not more.
+     */
+    @Test public void unsureOfOurPositionMakesTheWarningFallSilent() {
+        List<ApiModels.Vehicle> vs = new ArrayList<>();
+        vs.add(vehicle(53.544000, -113.492000));
+        double lat = 53.536000, lon = -113.492000;      // about 890 m away
+
+        assertTrue("should warn when we are confident",
+                TransitProgress.looksLikeWrongVehicle(vs, lat, lon, 0));
+        assertFalse("should stay quiet when our own position is 200 m uncertain",
+                TransitProgress.looksLikeWrongVehicle(vs, lat, lon, 200));
+    }
+
+    @Test public void uncertaintyDoesNotResurrectAWarningWithoutData() {
+        // Absent vehicle data is still not evidence, at any confidence.
+        assertFalse(TransitProgress.looksLikeWrongVehicle(null, 53.5, -113.5, 0));
+        assertFalse(TransitProgress.looksLikeWrongVehicle(null, 53.5, -113.5, 500));
+    }
+
+    @Test public void theOldTwoArgumentFormStillMeansFullyConfident() {
+        List<ApiModels.Vehicle> vs = new ArrayList<>();
+        vs.add(vehicle(53.544000, -113.492000));
+        double lat = 53.536000, lon = -113.492000;
+        assertEquals(TransitProgress.looksLikeWrongVehicle(vs, lat, lon),
+                     TransitProgress.looksLikeWrongVehicle(vs, lat, lon, 0));
+    }
+
     // ── the geometry underneath it all ─────────────────────────────────────
 
     @Test public void metresMatchesAKnownDistance() {

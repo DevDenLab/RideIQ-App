@@ -14,7 +14,9 @@ import android.location.LocationListener;
 import android.location.LocationManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 import android.speech.tts.TextToSpeech;
 
 import androidx.annotation.NonNull;
@@ -54,6 +56,34 @@ public class TransitRideService extends Service {
 
     private static final String CHANNEL_ID = "transit_ride";
     private static final int NOTIFICATION_ID = 42;
+
+    /**
+     * Smooths the GPS and, more importantly, keeps going when it stops.
+     *
+     * The old tracker took each raw fix at face value, so a fix drifting eighty
+     * metres down the road could advance the stop countdown early and stand the
+     * rider up at the wrong place. It also had no answer at all for the case
+     * Edmonton guarantees: the LRT runs underground through downtown, fixes stop,
+     * and the tracker simply froze on its last reading -- which is exactly where
+     * guidance matters most.
+     */
+    private final RideKalmanFilter filter = new RideKalmanFilter();
+
+    /** How long without a fix before we start dead reckoning. */
+    private static final long COAST_AFTER_MS = 15_000L;
+    /** How often to re-evaluate while coasting. */
+    private static final long COAST_TICK_MS = 10_000L;
+    /**
+     * How long to keep coasting before admitting we are lost.
+     *
+     * The Capital Line's underground section takes about two minutes end to end,
+     * so three covers it with room to spare. Past that the estimate has decayed
+     * far enough that naming a stop would be a guess dressed as guidance.
+     */
+    private static final long MAX_COAST_MS = 180_000L;
+
+    private Handler coastHandler;
+    private boolean coasting = false;
 
     private LocationManager lm;
     private TextToSpeech tts;
@@ -113,6 +143,7 @@ public class TransitRideService extends Service {
                 build("Riding " + route, "Waiting for a GPS fix...", false));
 
         requestUpdates();
+        startCoastTicker();
         // START_NOT_STICKY: if the system kills this, silently resurrecting it
         // without an itinerary would leave a permanent dead notification.
         return START_NOT_STICKY;
@@ -136,24 +167,86 @@ public class TransitRideService extends Service {
 
     private void onFix(Location loc) {
         if (itinerary == null) return;
-        TransitProgress.State st = TransitProgress.evaluate(
-                itinerary, loc.getLatitude(), loc.getLongitude(), furthestLeg);
+        // Every fix goes through the filter, and the filter's estimate is what
+        // the tracker acts on -- never the raw reading. An outlier the filter
+        // rejects still leaves a usable position behind, which is the point.
+        filter.update(loc.getLatitude(), loc.getLongitude(),
+                      loc.hasAccuracy() ? loc.getAccuracy() : 0,
+                      System.currentTimeMillis());
+        coasting = false;
+        evaluateAt(filter.latitude(), filter.longitude(), filter.uncertaintyMetres(),
+                   false);
+    }
+
+    /**
+     * Re-evaluate the plan at an estimated position.
+     *
+     * @param estimated true when the position is dead reckoned rather than
+     *                  measured. Nothing is spoken in that case: interrupting a
+     *                  rider with "get off at the next stop" on the strength of a
+     *                  guess is worse than staying quiet, because they act on it
+     *                  immediately and have no way to check it.
+     */
+    private void evaluateAt(double lat, double lon, double uncertaintyM,
+                            boolean estimated) {
+        TransitProgress.State st = TransitProgress.evaluate(itinerary, lat, lon,
+                                                            furthestLeg);
         if (st.legIndex > furthestLeg) furthestLeg = st.legIndex;
 
-        checkVehicle(st, loc);
+        checkVehicle(st, lat, lon, uncertaintyM);
 
-        boolean urgent = st.alert != null && !announced.contains(st.alertKey);
+        boolean urgent = !estimated && st.alert != null
+                && !announced.contains(st.alertKey);
         if (urgent) {
             announced.add(st.alertKey);
             speak(st.alert);
         }
-        update(st.headline, st.detail, urgent);
+        update(st.headline,
+               estimated ? st.detail + "  -  estimated, no signal" : st.detail,
+               urgent);
 
-        if (st.arrived) {
+        if (st.arrived && !estimated) {
             speak("You have arrived. Enjoy your trip.");
             update("Arrived", "Get off at " + st.alightStop.name, true);
             stopSelf();
         }
+    }
+
+    /**
+     * Keeps the countdown running when the fixes stop.
+     *
+     * The filter carries a velocity estimate, so it can dead reckon forward and
+     * report honestly growing uncertainty while it does. That is what makes this
+     * safe to act on at all: guidance gets quieter as confidence drops, and is
+     * withdrawn outright rather than becoming confidently wrong.
+     */
+    private void startCoastTicker() {
+        coastHandler = new Handler(Looper.getMainLooper());
+        coastHandler.postDelayed(new Runnable() {
+            @Override public void run() {
+                tick();
+                if (coastHandler != null) coastHandler.postDelayed(this, COAST_TICK_MS);
+            }
+        }, COAST_TICK_MS);
+    }
+
+    private void tick() {
+        if (itinerary == null || !filter.isReady()) return;
+        long now = System.currentTimeMillis();
+        long since = filter.millisSinceFix(now);
+        if (since < COAST_AFTER_MS) return;              // fixes still arriving
+
+        if (since > MAX_COAST_MS) {
+            if (!coasting) return;                       // already said so
+            coasting = false;
+            update("Lost signal", "Cannot tell which stop you are at. Guidance is "
+                    + "paused until the phone gets a fix again.", false);
+            return;
+        }
+        coasting = true;
+        filter.coastTo(now);
+        evaluateAt(filter.latitude(), filter.longitude(), filter.uncertaintyMetres(),
+                   true);
     }
 
     /**
@@ -165,7 +258,8 @@ public class TransitRideService extends Service {
      * beyond the threshold before this speaks. The cost of a false alarm here is
      * that the rider stops trusting the app entirely.
      */
-    private void checkVehicle(TransitProgress.State st, Location loc) {
+    private void checkVehicle(TransitProgress.State st, double lat, double lon,
+                              double uncertaintyM) {
         if (st.leg == null || !st.onBoard || st.leg.patternCode == null) {
             offVehicleStreak = 0;
             return;
@@ -194,8 +288,9 @@ public class TransitRideService extends Service {
             return;                       // judge on the next fix, once it lands
         }
 
-        if (TransitProgress.looksLikeWrongVehicle(vehicles, loc.getLatitude(),
-                                                  loc.getLongitude())) {
+        // Widened by our own position uncertainty, so the warning falls silent
+        // while coasting instead of accusing everyone in the tunnel.
+        if (TransitProgress.looksLikeWrongVehicle(vehicles, lat, lon, uncertaintyM)) {
             offVehicleStreak++;
         } else {
             offVehicleStreak = 0;
@@ -262,6 +357,10 @@ public class TransitRideService extends Service {
     @Override
     public void onDestroy() {
         RUNNING = false;
+        if (coastHandler != null) {
+            coastHandler.removeCallbacksAndMessages(null);
+            coastHandler = null;
+        }
         if (lm != null) lm.removeUpdates(listener);
         if (tts != null) { tts.stop(); tts.shutdown(); }
         super.onDestroy();

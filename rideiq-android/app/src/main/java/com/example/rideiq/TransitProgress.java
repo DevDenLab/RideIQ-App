@@ -84,8 +84,29 @@ public final class TransitProgress {
     /** True only when we have positions AND the rider is far from all of them. */
     public static boolean looksLikeWrongVehicle(List<ApiModels.Vehicle> vehicles,
                                                 double lat, double lon) {
+        return looksLikeWrongVehicle(vehicles, lat, lon, 0);
+    }
+
+    /**
+     * The same check, widened by how sure we are of our own position.
+     *
+     * Since the tracker runs fixes through a Kalman filter, it knows its own
+     * uncertainty -- and that number matters here more than anywhere. While
+     * coasting through the LRT tunnel the position estimate decays steadily, and
+     * a fixed 700 m threshold would eventually accuse every rider on the Capital
+     * Line of being on the wrong train, at exactly the moment there is no
+     * evidence either way. Widening by two sigma means the warning goes quiet as
+     * confidence drops instead of getting louder.
+     *
+     * @param positionUncertaintyM one-sigma uncertainty in our own position
+     */
+    public static boolean looksLikeWrongVehicle(List<ApiModels.Vehicle> vehicles,
+                                                double lat, double lon,
+                                                double positionUncertaintyM) {
         double d = metresToNearestVehicle(vehicles, lat, lon);
-        return d >= 0 && d > OFF_VEHICLE_M;
+        if (d < 0) return false;               // absent data is not evidence
+        double threshold = OFF_VEHICLE_M + 2 * Math.max(0, positionUncertaintyM);
+        return d > threshold;
     }
 
     /** "Bus 055 toward West Edmonton Mall" for the next ride after legIndex. */

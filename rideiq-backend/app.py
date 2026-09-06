@@ -26,6 +26,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 import models as M
+import places as P
 import routing as R
 import transit_client as T
 
@@ -170,7 +171,10 @@ LANDMARKS = [
 # ---- basic ----
 @app.get("/health")
 def health():
-    return {"status": "ok", "instance": INSTANCE, "cache": "redis" if _redis else "local"}
+    return {"status": "ok", "instance": INSTANCE,
+            "cache": "redis" if _redis else "local",
+            "places": {"loaded": P.LOAD_INFO.get("loaded", False),
+                       "entries": P.LOAD_INFO.get("entries", 0)}}
 
 
 @app.get("/metrics")
@@ -282,6 +286,18 @@ def geocode(q: str):
     hit = cache_get(key)
     if hit:
         return {**hit, "cached": True, "instance": INSTANCE}
+
+    # A name the gazetteer holds exactly needs no network round trip. Restricted
+    # to an exact match on purpose -- /geocode returns ONE coordinate and the app
+    # routes straight to it, so a near-miss here silently sends someone to the
+    # wrong place. Autocomplete can afford to guess; this cannot.
+    for cand in P.search(q, limit=3):
+        if cand["display_name"].lower() == q.lower():
+            out = {"display_name": cand["display_name"], "short": cand["short"],
+                   "lat": cand["lat"], "lon": cand["lon"], "source": "local"}
+            cache_set(key, out)
+            return {**out, "cached": False, "instance": INSTANCE}
+
     query = q if "edmonton" in q.lower() else f"{q}, Edmonton, Alberta, Canada"
     url = "https://nominatim.openstreetmap.org/search?" + urllib.parse.urlencode(
         {"q": query, "format": "jsonv2", "limit": 1, "addressdetails": 1, "countrycodes": "ca"})
@@ -301,30 +317,60 @@ def geocode(q: str):
     return {**out, "cached": False, "instance": INSTANCE}
 
 
-@app.get("/search")
-def search(q: str):
-    """Autocomplete: address/place text -> up to 5 Edmonton matches. Cached."""
-    q = q.strip()
-    if len(q) < 3:
-        return {"results": [], "instance": INSTANCE}
-    key = f"se:{q.lower()}"
-    hit = cache_get(key)
-    if hit:
-        return {**hit, "cached": True, "instance": INSTANCE}
+def _nominatim_search(q, limit=5):
+    """The old behaviour, now the fallback rather than the whole endpoint."""
     query = q if "edmonton" in q.lower() else f"{q}, Edmonton, Alberta, Canada"
     url = "https://nominatim.openstreetmap.org/search?" + urllib.parse.urlencode(
-        {"q": query, "format": "jsonv2", "limit": 5, "addressdetails": 1, "countrycodes": "ca"})
+        {"q": query, "format": "jsonv2", "limit": limit,
+         "addressdetails": 1, "countrycodes": "ca"})
     req = urllib.request.Request(url, headers={"User-Agent": "RideIQ/1.0 (student project)"})
     try:
         with urllib.request.urlopen(req, timeout=8) as resp:
             data = json.loads(resp.read().decode("utf-8"))
     except Exception:
+        return []
+    return [{"lat": float(t["lat"]), "lon": float(t["lon"]),
+             "display_name": t.get("display_name", ""),
+             "short": _short_address(t.get("address", {}), t.get("display_name", "")),
+             "kind": t.get("type") or "address", "source": "nominatim"}
+            for t in data]
+
+
+@app.get("/search")
+def search(q: str):
+    """Autocomplete: address/place text -> up to 5 Edmonton matches.
+
+    Answered from the local trie first. That is the whole point: this endpoint is
+    called on every keystroke, and proxying every keystroke to Nominatim cost
+    430 ms and violated their usage policy, which exists precisely to stop people
+    using it as a typeahead backend.
+
+    Nominatim is still here, because a gazetteer of stops and street names cannot
+    resolve a house number or a business, and quietly returning nothing for those
+    would be a worse search. It is now reached only when the local index is thin
+    on a query -- which for Edmonton is the minority of them.
+    """
+    q = q.strip()
+    if len(q) < 3:
         return {"results": [], "instance": INSTANCE}
-    results = [{"lat": float(t["lat"]), "lon": float(t["lon"]),
-               "display_name": t.get("display_name", ""),
-               "short": _short_address(t.get("address", {}), t.get("display_name", ""))}
-              for t in data]
-    out = {"results": results}
+
+    local = P.search(q, limit=5)
+    if len(local) >= 3:
+        # Enough good local answers. Never touch the network, never cache: the
+        # trie is already faster than reading the cache back out of Redis.
+        return {"results": local, "cached": False, "source": "local",
+                "instance": INSTANCE}
+
+    key = f"se:{q.lower()}"
+    hit = cache_get(key)
+    if hit:
+        METRICS["cache_hits"] += 1
+        return {**hit, "cached": True, "instance": INSTANCE}
+
+    remote = _nominatim_search(q, limit=5 - len(local))
+    seen = {r["display_name"] for r in local}
+    results = local + [r for r in remote if r["display_name"] not in seen]
+    out = {"results": results, "source": "local+nominatim" if local else "nominatim"}
     cache_set(key, out)
     return {**out, "cached": False, "instance": INSTANCE}
 

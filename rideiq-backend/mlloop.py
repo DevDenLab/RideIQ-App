@@ -118,7 +118,19 @@ def ensure_schema(conn):
             # ALTER TABLE ADD COLUMN is the one schema change SQLite does cheaply
             # and without rewriting the table, so an existing production database
             # upgrades in place on the next boot.
-            conn.execute("ALTER TABLE quotes ADD COLUMN %s %s" % (name, kind))
+            #
+            # docker-compose.yml runs two API containers sharing this exact file
+            # (api1, api2), and both run this migration on every boot. On a fresh
+            # database they can both see the column missing and both try to add
+            # it -- one wins, the other hits "duplicate column name" and used to
+            # crash at import time, taking that whole container down before it
+            # ever started serving. Caught here because it means only one thing:
+            # a concurrent sibling already finished the exact change we wanted.
+            try:
+                conn.execute("ALTER TABLE quotes ADD COLUMN %s %s" % (name, kind))
+            except sqlite3.OperationalError as e:
+                if "duplicate column" not in str(e).lower():
+                    raise
 
 
 # ── the champion's own predictions, logged ─────────────────────────────────

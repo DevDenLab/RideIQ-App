@@ -54,6 +54,71 @@ class SchemaTest(Base):
             ML.ensure_schema(self.conn)
         self.assertEqual(0, ML.data_status(self.conn)["predictions_logged"])
 
+    def test_two_processes_migrating_the_same_fresh_db_do_not_crash(self):
+        """The bug this test exists for took a container down at import time.
+
+        docker-compose.yml runs two API containers (api1, api2) sharing one
+        SQLite file. On a first boot against a fresh database, both run this
+        migration and can both see a column missing before either has added
+        it -- one wins the ALTER TABLE, the other hits "duplicate column name"
+        and, before this test, propagated straight up through ensure_schema(),
+        which is called at MODULE IMPORT TIME (see app.py). An uncaught
+        exception there does not fail a request, it kills the whole process
+        before it ever binds a socket -- confirmed by actually racing two real
+        connections against a real file below, not by asserting on the
+        exception handler in isolation.
+        """
+        fd, path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        try:
+            a = sqlite3.connect(path)
+            b = sqlite3.connect(path)
+            # Both see the same fresh, columnless table before either alters it
+            # -- this is what "two processes starting at once" looks like.
+            a.execute("""CREATE TABLE quotes(
+                id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL,
+                distance REAL, hour INT, eta REAL, fare REAL,
+                cancel_risk REAL, instance TEXT)""")
+            a.commit()
+            ML.ensure_schema(a)          # the "winner" -- adds every column
+            ML.ensure_schema(b)          # the "loser" -- must not raise
+            cols = {r[1] for r in b.execute("PRAGMA table_info(quotes)")}
+            self.assertIn("weather", cols)
+            b.close()
+            a.close()
+        finally:
+            os.unlink(path)
+
+    def test_a_genuinely_broken_column_still_raises(self):
+        """The fix must not swallow every OperationalError, only this one.
+
+        A schema problem that has nothing to do with the concurrent-boot race
+        (a locked file, a missing table, a real typo in the DDL) must still
+        surface -- silently eating every OperationalError would trade one bug
+        for a much quieter one.
+        """
+        fd, path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        try:
+            conn = sqlite3.connect(path)
+            conn.execute("""CREATE TABLE quotes(
+                id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL,
+                distance REAL, hour INT, eta REAL, fare REAL,
+                cancel_risk REAL, instance TEXT)""")
+            conn.commit()
+            conn.close()
+            # A connection to a table that does not exist at all raises a
+            # DIFFERENT OperationalError message ("no such table"), which the
+            # fix's message-based check must not mistake for the race.
+            broken = sqlite3.connect(path)
+            try:
+                with self.assertRaises(sqlite3.OperationalError):
+                    broken.execute("ALTER TABLE not_a_real_table ADD COLUMN x REAL")
+            finally:
+                broken.close()
+        finally:
+            os.unlink(path)
+
     def test_upgrades_a_database_written_by_the_old_schema(self):
         """A live database already exists on EC2 with the original columns.
 

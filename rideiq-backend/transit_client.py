@@ -137,6 +137,17 @@ def _post(query, variables):
             data = json.loads(r.read())
     except urllib.error.URLError as e:
         raise TransitUnavailable("OTP at %s is not answering (%s)" % (OTP_URL, e))
+    except TimeoutError as e:
+        # A connection that succeeds and then never answers raises a bare
+        # TimeoutError from deep inside http.client's response read, past the
+        # point urllib wraps as URLError -- so this is NOT caught by the
+        # except above, and used to propagate as an unhandled 500. That is
+        # also the exact scenario a circuit breaker exists for: OTP present
+        # but slow, not absent. Without this, app.py's breaker never saw a
+        # single one of these as a failure of the dependency it is meant to
+        # be watching -- confirmed live: ten calls against a stalled OTP, all
+        # failing, and the breaker reported zero failures and never opened.
+        raise TransitUnavailable("OTP at %s timed out answering (%s)" % (OTP_URL, e))
     if data.get("errors"):
         raise RuntimeError(data["errors"][0].get("message", "OTP rejected the query"))
     return data["data"]

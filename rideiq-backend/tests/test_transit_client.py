@@ -12,10 +12,52 @@ real one. Run with `python -m unittest discover -s tests`.
 import os
 import sys
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import transit_client as T
+
+
+class Post(unittest.TestCase):
+    """_post()'s job is to turn "OTP did not answer" into TransitUnavailable,
+    which is the ONLY exception type app.py's circuit breaker is configured
+    to count as the dependency's fault (see resilience.py's Guard).
+
+    A read timeout after the connection succeeds -- OTP present but stalled,
+    exactly the scenario the breaker exists for -- raises a bare TimeoutError
+    from deep inside http.client, past the point urllib wraps anything as
+    URLError. The original except clause only caught URLError, so this class
+    of failure propagated as an unhandled 500 AND was invisible to the
+    breaker: confirmed live against a real stalled server, ten consecutive
+    calls, all failing, breaker state stayed closed with zero failures
+    recorded. Both cases are pinned here so neither regresses silently.
+    """
+
+    def test_a_connection_refusal_is_transit_unavailable(self):
+        with mock.patch("urllib.request.urlopen",
+                        side_effect=T.urllib.error.URLError("refused")):
+            with self.assertRaises(T.TransitUnavailable):
+                T._post("{}", {})
+
+    def test_a_stalled_response_is_ALSO_transit_unavailable(self):
+        """The bug this test exists for: a bare TimeoutError, not URLError."""
+        with mock.patch("urllib.request.urlopen", side_effect=TimeoutError("timed out")):
+            with self.assertRaises(T.TransitUnavailable):
+                T._post("{}", {})
+
+    def test_a_genuine_bug_in_our_own_query_still_raises_plainly(self):
+        # Not every failure is the dependency's fault. OTP rejecting a
+        # malformed GraphQL query is ours, and must stay a RuntimeError, not
+        # get relabelled TransitUnavailable -- doing that would let a broken
+        # query silently open the circuit for every caller.
+        class FakeResponse:
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def read(self): return b'{"errors": [{"message": "bad query"}]}'
+        with mock.patch("urllib.request.urlopen", return_value=FakeResponse()):
+            with self.assertRaises(RuntimeError):
+                T._post("{}", {})
 
 
 class DecodePolyline(unittest.TestCase):

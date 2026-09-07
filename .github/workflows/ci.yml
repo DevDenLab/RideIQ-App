@@ -164,7 +164,7 @@ jobs:
           code=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8000/trip-outcome \
             -H 'Content-Type: application/json' -d '{"quote_id": 999999, "actual_min": 20}')
           [ "$code" = "404" ] || { echo "expected 404 for an unknown quote_id, got $code"; exit 1; }
-          echo "  ok, 404
+          echo "  ok, 404"
 
       - name: Unit tests
         working-directory: rideiq-backend

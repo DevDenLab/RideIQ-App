@@ -69,6 +69,12 @@ public interface ApiService {
                                             @Query("arrive_by") boolean arriveBy,
                                             @Query("wheelchair") boolean wheelchair);
 
+    // Report what a completed trip actually took, so the ETA model can one day
+    // be trained on something other than synthetic data. Fire and forget: a
+    // failed report costs a training row, never a rider anything.
+    @POST("trip-outcome")
+    Call<ApiModels.TripOutcomeResponse> tripOutcome(@Body ApiModels.TripOutcomeRequest body);
+
     // Where the vehicles on one pattern are right now. Used during a ride to
     // answer what the stop countdown cannot: are you on the right vehicle?
     @GET("transit/vehicles")

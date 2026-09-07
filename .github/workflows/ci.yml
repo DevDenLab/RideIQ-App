@@ -84,8 +84,93 @@ jobs:
           echo "status $code"
           [ "$code" = "503" ] || { echo "expected 503 with no OTP, got $code"; exit 1; }
 
-      - name: transit_client unit checks
+          # Autocomplete must be answered from the committed gazetteer, not from
+          # Nominatim. If places.json goes missing this still returns results --
+          # by falling back to the network, slowly and against their usage policy
+          # -- so asserting on the SOURCE is the only check that catches it.
+          echo "--- autocomplete is served locally ---"
+          curl -sf -m 5 "http://127.0.0.1:8000/search?q=churchill" \
+            | python -c "import json,sys; d=json.load(sys.stdin); assert d.get('source')=='local', d; assert len(d['results'])>=3, d; print('ok', len(d['results']), 'local results')"
+
+          echo "--- the gazetteer actually loaded ---"
+          curl -sf -m 5 http://127.0.0.1:8000/health \
+            | python -c "import json,sys; d=json.load(sys.stdin); assert d['places']['loaded'], d; assert d['places']['entries']>5000, d; print('ok', d['places']['entries'], 'places')"
+
+          # Ranking, not just presence. "34 ave" contains a word starting "34"
+          # and a word starting "ave", so dozens of cross streets match it as
+          # well as 34 Avenue does -- ordering is the whole feature.
+          echo "--- autocomplete ranks by word order ---"
+          curl -sf -m 5 --get --data-urlencode "q=34 ave" http://127.0.0.1:8000/search \
+            | python -c "import json,sys; d=json.load(sys.stdin); top=d['results'][0]['display_name']; assert top.lower().startswith('34 avenue'), top; print('ok', top)"
+
+          # The breaker must be reported and, with no OTP behind us, must trip.
+          # The transit call above already failed once; a few more open it.
+          echo "--- the OTP circuit breaker trips and then fails fast ---"
+          for i in 1 2 3 4 5 6; do
+            curl -s -o /dev/null -m 30 \
+              "http://127.0.0.1:8000/transit?lat1=53.5444&lon1=-113.4909&lat2=53.5232&lon2=-113.526$i" || true
+          done
+          curl -sf -m 5 http://127.0.0.1:8000/resilience \
+            | python -c "import json,sys; d=json.load(sys.stdin)['opentripplanner']; assert d['breaker']['state']=='open', d; print('ok breaker', d['breaker']['state'], 'after', d['breaker']['failures'], 'failures')"
+
+          # Once open it must answer in milliseconds, not by waiting out a
+          # 20-second timeout again. That speed IS the feature.
+          echo "--- an open breaker answers immediately, with Retry-After ---"
+          out=$(curl -s -o /dev/null -m 10 -w '%{http_code} %{time_total}' \
+            "http://127.0.0.1:8000/transit?lat1=53.5444&lon1=-113.4909&lat2=53.5232&lon2=-113.5299")
+          echo "  $out"
+          python - "$out" <<'ASSERT'
+          import sys
+          code, secs = sys.argv[1].split()
+          assert code == "503", "expected 503, got " + code
+          assert float(secs) < 1.0, "open breaker took %ss -- it is not failing fast" % secs
+          print("ok, 503 in %ss" % secs)
+          ASSERT
+          curl -s -D - -o /dev/null -m 10 \
+            "http://127.0.0.1:8000/transit?lat1=53.5444&lon1=-113.4909&lat2=53.5232&lon2=-113.5298" \
+            | grep -qi '^retry-after:' || { echo "no Retry-After on a shed request"; exit 1; }
+          echo "  Retry-After present"
+
+          # A fresh deployment has no outcomes, and must say so rather than
+          # reporting a model comparison it cannot support.
+          echo "--- the feedback loop is honest about having no data ---"
+          curl -sf -m 5 http://127.0.0.1:8000/training-data \
+            | python -c "import json,sys; d=json.load(sys.stdin); assert d['ready_to_train'] is False, d; print('ok', d['usable_for_training'], 'of', d['needed'])"
+          curl -sf -m 5 http://127.0.0.1:8000/shadow-report \
+            | python -c "import json,sys; d=json.load(sys.stdin); assert d['accuracy'] is None, d; print('ok, names no winner without outcomes')"
+
+          # And the loop closes: a served route hands back an id, and an outcome
+          # reported against that id becomes training data.
+          echo "--- prediction -> outcome -> training data ---"
+          # Asserted as a DELTA, not an absolute count. Pinning the total to 1
+          # made this depend on every other request the script had already made
+          # and on any database left behind by a previous run -- which is exactly
+          # how it failed the first time it was run against a real server.
+          before=$(curl -sf -m 5 http://127.0.0.1:8000/training-data \
+            | python -c "import json,sys; print(json.load(sys.stdin)['usable_for_training'])")
+          qid=$(curl -sf -X POST http://127.0.0.1:8000/route-latlon -H 'Content-Type: application/json' \
+            -d '{"lat1":53.5444,"lon1":-113.4909,"lat2":53.5232,"lon2":-113.5263,"hour":8}' \
+            | python -c "import json,sys; d=json.load(sys.stdin); assert d.get('quote_id'), 'no quote_id on a served route'; print(d['quote_id'])")
+          curl -sf -X POST http://127.0.0.1:8000/trip-outcome -H 'Content-Type: application/json' \
+            -d "{\"quote_id\": $qid, \"actual_min\": 24.5}" > /dev/null
+          after=$(curl -sf -m 5 http://127.0.0.1:8000/training-data \
+            | python -c "import json,sys; print(json.load(sys.stdin)['usable_for_training'])")
+          echo "  usable_for_training: $before -> $after"
+          [ "$after" = "$((before + 1))" ] || { echo "reporting an outcome added no training data"; exit 1; }
+          echo "  ok, the loop is closed"
+
+          # An outcome nothing can be attributed to must be refused, not counted.
+          echo "--- an unattributable outcome is refused ---"
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8000/trip-outcome \
+            -H 'Content-Type: application/json' -d '{"quote_id": 999999, "actual_min": 20}')
+          [ "$code" = "404" ] || { echo "expected 404 for an unknown quote_id, got $code"; exit 1; }
+          echo "  ok, 404"
+
+      - name: Unit tests
         working-directory: rideiq-backend
+        # Covers transit_client, the k-d tree, the autocomplete trie, the circuit
+        # breaker and the ML feedback loop. discover picks up new files, so
+        # adding tests/test_*.py is enough to gate them.
         run: python -m unittest discover -s tests -v
 
       - name: API key gate
@@ -168,6 +253,25 @@ jobs:
         run: |
           bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
           ./actionlint -color
+
+      - name: The committed gazetteer is well formed
+        run: |
+          python - <<'PY'
+          import json, sys
+          d = json.load(open("rideiq-backend/places.json", encoding="utf-8"))
+          entries = d.get("entries") or []
+          assert len(entries) > 5000, "only %d places" % len(entries)
+          assert d["count"] == len(entries), "count disagrees with the data"
+          kinds = {}
+          for e in entries:
+              for k in ("n", "y", "x", "k", "w"):
+                  assert k in e, "entry missing %s: %r" % (k, e)
+              assert 52.5 < e["y"] < 54.5 and -115 < e["x"] < -112, \
+                  "coordinate outside Edmonton: %r" % e
+              kinds[e["k"]] = kinds.get(e["k"], 0) + 1
+          assert kinds.get("stop", 0) > 3000, kinds
+          print("ok", len(entries), "places:", kinds)
+          PY
 
       - name: Config files parse
         run: |

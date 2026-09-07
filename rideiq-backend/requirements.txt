@@ -13,6 +13,10 @@
 
 numpy==2.2.6
 scikit-learn==1.7.2
+# Pulled in by scikit-learn anyway, but retrain.py and mlloop.py import it
+# directly to persist the challenger model -- so it is a direct dependency and
+# is pinned like one, not left to whatever sklearn happens to want.
+joblib==1.5.3
 scipy==1.15.3
 matplotlib==3.10.9
 hmmlearn==0.3.3

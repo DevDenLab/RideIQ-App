@@ -100,7 +100,19 @@ def cache_set(k, v, ttl=None):
 
 # ---- db ----
 def db():
-    c = sqlite3.connect(DB_PATH); c.row_factory = sqlite3.Row; return c
+    c = sqlite3.connect(DB_PATH)
+    c.row_factory = sqlite3.Row
+    # busy_timeout is a per-CONNECTION setting, not a database-file setting --
+    # unlike journal_mode=WAL, it does not persist. ensure_schema() sets it
+    # once, on the one connection it runs with at boot, and every request
+    # since has opened a brand new connection here with the default
+    # (0 ms: fail immediately) instead. Under real concurrent writers -- two
+    # processes sharing this file is the deployed topology -- that surfaced
+    # as sqlite3.OperationalError: database is locked on /quote under load,
+    # a genuine 500 to the rider, not the "slightly slower, never lost" write
+    # the docstring in mlloop.py promised.
+    c.execute("PRAGMA busy_timeout=5000")
+    return c
 
 
 with db() as _c:

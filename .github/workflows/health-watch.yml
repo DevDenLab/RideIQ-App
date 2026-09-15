@@ -23,8 +23,17 @@
 name: health-watch
 
 on:
-  schedule:
-    - cron: "37 * * * *"      # hourly, offset from reconcile-deploy at :17
+  # Schedule trigger removed 2026-09-15: the EC2 host (secrets.EC2_HOST) was on
+  # an AWS free-tier account that has since expired -- the instance is gone for
+  # good. Every hourly run was failing on the first check (curl timeout hitting
+  # /health), correctly reporting that the product is unreachable because there
+  # is no longer a product running anywhere, not because something broke.
+  #
+  # This workflow is the project's only alerting (see the file header above) --
+  # re-enable by uncommenting the schedule block once there is a real host to
+  # watch again:
+  # schedule:
+  #   - cron: "37 * * * *"      # hourly, offset from reconcile-deploy at :17
   workflow_dispatch:
 
 permissions:

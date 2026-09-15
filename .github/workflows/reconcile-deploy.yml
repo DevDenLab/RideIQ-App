@@ -19,8 +19,16 @@
 name: reconcile-deploy
 
 on:
-  schedule:
-    - cron: "17 * * * *"     # hourly, off the hour to dodge the rush
+  # Schedule trigger removed 2026-09-15: the EC2 host (secrets.EC2_HOST) was on
+  # an AWS free-tier account that has since expired, so the instance is gone
+  # for good, not just down. Every hourly run since 2026-09-12 05:46 UTC failed
+  # with "dial tcp ***:22: i/o timeout" -- correctly reporting reality, but an
+  # hourly failure email for infrastructure that no longer exists is just noise.
+  #
+  # Re-enable by uncommenting the schedule block once EC2_HOST, EC2_USER and
+  # EC2_SSH_KEY point at a real, running host again:
+  # schedule:
+  #   - cron: "17 * * * *"     # hourly, off the hour to dodge the rush
   workflow_dispatch:
     inputs:
       check_only:
